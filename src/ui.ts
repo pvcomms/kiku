@@ -171,8 +171,12 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
   .player { position: fixed; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--paper-2) 88%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-top: 1px solid var(--line); padding: 12px 20px calc(12px + env(safe-area-inset-bottom)); transform: translateY(110%); transition: transform 500ms var(--ease); }
   .player.on { transform: none; }
   .player .in { max-width: 620px; margin: 0 auto; }
-  .player .t { display: block; font-family: var(--display); font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 6px; }
+  .player .prow { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+  .player .t { display: block; font-family: var(--display); font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .player audio { width: 100%; display: block; height: 40px; }
+  .speedBtn { height: 26px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--paper); color: var(--ink-2); font: 12px/1 var(--mono); cursor: pointer; flex-shrink: 0; transition: background-color 160ms var(--ease), color 160ms var(--ease), border-color 160ms var(--ease); }
+  .speedBtn:hover { color: var(--ink); border-color: var(--ink-3); }
+  .speedBtn:active { transform: scale(0.96); }
   footer { padding: 56px 0 20px; font: 12px/1.6 var(--mono); color: var(--ink-3); }
   @media (max-width: 480px) { .wordmark { font-size: 40px; } .lede { font-size: 20px; } .item { gap: 12px; } .item .t { font-size: 19px; } }
 </style>
@@ -246,7 +250,10 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
 
 <div class="player" id="player">
   <div class="in">
-    <span class="t" id="playerTitle"></span>
+    <div class="prow">
+      <span class="t" id="playerTitle"></span>
+      <button class="speedBtn" id="speedBtn" type="button" title="Playback speed">1×</button>
+    </div>
     <audio id="audio" controls preload="none"></audio>
   </div>
 </div>
@@ -325,6 +332,18 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
   // --- library + player ---
   const audio = $('#audio'), player = $('#player');
   let current = null;
+  const SPEEDS = [1, 1.25, 1.5, 1.75, 2, 0.75];
+  let speed = Number(store.get('kiku.speed')) || 1;
+  if (!SPEEDS.includes(speed)) speed = 1;
+  audio.playbackRate = speed;
+  const speedBtn = $('#speedBtn');
+  speedBtn.textContent = speed + '×';
+  speedBtn.addEventListener('click', () => {
+    speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+    audio.playbackRate = speed;
+    store.set('kiku.speed', String(speed));
+    speedBtn.textContent = speed + '×';
+  });
   async function loadLibrary() {
     let items = [];
     let serverPos = {};
@@ -365,6 +384,7 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
     current = d.id;
     const isExternal = d.file.startsWith('http://') || d.file.startsWith('https://');
     audio.src = isExternal ? d.file : '/audio/' + encodeURIComponent(d.file);
+    audio.playbackRate = speed;
     $('#playerTitle').textContent = d.title;
     player.classList.add('on');
     let pos = Number(store.get('kiku.pos.' + d.id) || 0);

@@ -1,0 +1,37 @@
+#!/bin/zsh
+# kiku — send a link, a file, or text to the Studio reader.
+#   kiku https://aeon.co/essays/...        read a page
+#   kiku ~/Downloads/chapter.epub          read a file (md, txt, html, pdf, epub, docx)
+#   kiku "some text to hear"               read pasted text
+#   kiku                                   show the library and feed address
+#   kiku --open                            open the page
+set -e
+PORT="${KIKU_PORT:-4747}"
+BASE="http://127.0.0.1:${PORT}"
+
+if ! curl -sf "$BASE/health" >/dev/null 2>&1; then
+  echo "kiku: server is not running on :$PORT. Start it with: launchctl kickstart -k gui/$(id -u)/com.param.kiku" >&2
+  exit 1
+fi
+
+if [ $# -eq 0 ]; then
+  curl -s "$BASE/api/library" | node -e '
+    let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{const {base,items}=JSON.parse(s);
+    const fmt=n=>{n=Math.round(n);const m=Math.floor(n/60),x=n%60;return m+":"+String(x).padStart(2,"0")};
+    for (const it of items.slice(0,15)) console.log(`${fmt(it.seconds).padStart(6)}  ${it.title}${it.author?"  — "+it.author:""}`);
+    if (!items.length) console.log("library is empty");
+    console.log(`\nfeed: ${base}/feed.xml   page: ${base}/`);});'
+  exit 0
+fi
+
+if [ "$1" = "--open" ]; then open "$BASE/"; exit 0; fi
+
+for arg in "$@"; do
+  if [ -f "$arg" ]; then
+    curl -s -F "file=@${arg}" "$BASE/api/jobs"
+  else
+    curl -s -F "input=${arg}" "$BASE/api/jobs"
+  fi
+  echo
+done
+echo "queued. watch it at $BASE/"

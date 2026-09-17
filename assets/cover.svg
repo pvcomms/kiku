@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1400" viewBox="0 0 1400 1400">
+  <rect width="1400" height="1400" fill="#F7F6F3"/>
+  <circle cx="700" cy="640" r="300" fill="none" stroke="#111111" stroke-width="14"/>
+  <circle cx="700" cy="640" r="180" fill="none" stroke="#111111" stroke-width="14" stroke-dasharray="565 1131" transform="rotate(-90 700 640)"/>
+  <circle cx="700" cy="640" r="60" fill="#B5532A"/>
+  <text x="700" y="1120" text-anchor="middle" font-family="New York, Georgia, serif" font-size="150" fill="#111111">kiku</text>
+  <text x="700" y="1215" text-anchor="middle" font-family="New York, Georgia, serif" font-style="italic" font-size="54" fill="#6B6863">聞く · read to me</text>
+</svg>

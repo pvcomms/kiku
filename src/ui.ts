@@ -31,6 +31,7 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
 <meta name="apple-mobile-web-app-title" content="Kiku">
 <meta name="theme-color" content="#F3EEE4" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#171614" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/cover.png">
 <link rel="apple-touch-icon" href="/cover.png">
 <title>Kiku</title>

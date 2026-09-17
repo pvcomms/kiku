@@ -126,13 +126,24 @@ export async function fromFile(
       markdown: md,
     };
   }
+  if ([".docx", ".doc", ".rtf", ".odt"].includes(ext)) {
+    const md = await textutil(buf, ext);
+    return { title: base || "Document", sourceUrl, sourceType: "file", markdown: md };
+  }
   if (isZip || ext === ".epub" || ext === ".docx") {
-    const md = await markitdown(buf, ext || (isZip ? ".epub" : ".bin"));
+    const raw = await markitdown(buf, ext || (isZip ? ".epub" : ".bin"));
+    // markitdown prefixes EPUBs with **Title:** / **Authors:** lines; lift them into metadata.
+    const meta: Record<string, string> = {};
+    const md = raw.replace(/^\*\*(Title|Authors?|Language|Identifier|Publisher|Date):\*\*\s*(.*)$\n?/gim, (_, k, v) => {
+      meta[k.toLowerCase()] = v.trim();
+      return "";
+    });
     return {
-      title: base || "Book",
+      title: meta.title || base || "Book",
+      author: meta.authors || meta.author || undefined,
       sourceUrl,
       sourceType: "file",
-      markdown: md,
+      markdown: md.trim(),
     };
   }
   const r = fromText(buf.toString("utf8"), undefined, sourceUrl);
@@ -163,6 +174,20 @@ async function pdfToText(buf: Buffer, name: string): Promise<string> {
     return reflow(stdout);
   } catch {
     return markitdown(buf, ".pdf");
+  } finally {
+    fs.unlink(p).catch(() => {});
+  }
+}
+
+/** macOS built-in converter: Word, RTF, ODT -> plain text. No Python deps. */
+async function textutil(buf: Buffer, ext: string): Promise<string> {
+  const p = await tmpFile(buf, ext);
+  try {
+    const { stdout } = await run("textutil", ["-convert", "txt", "-stdout", p], {
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    if (wordCount(stdout) < 5) throw new Error("Could not read that file.");
+    return stdout;
   } finally {
     fs.unlink(p).catch(() => {});
   }

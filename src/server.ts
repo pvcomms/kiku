@@ -255,6 +255,28 @@ function firstText(...cands: unknown[]): string {
 
 const app = new Hono();
 
+app.use("*", async (c, next) => {
+  await next();
+  const p = c.req.path;
+  if ((p === "/api/jobs" && c.req.method === "GET") || p.startsWith("/assets/") || p === "/api/library") return;
+  console.log(`[kiku] ${c.req.method} ${p} ${c.res.status} · ${(c.req.header("user-agent") ?? "").slice(0, 70)}`);
+});
+
+app.get("/manifest.webmanifest", (c) => {
+  c.header("content-type", "application/manifest+json");
+  return c.body(
+    JSON.stringify({
+      name: "Kiku",
+      short_name: "Kiku",
+      start_url: "/",
+      display: "standalone",
+      background_color: "#F7F6F3",
+      theme_color: "#F7F6F3",
+      icons: [{ src: "/cover.png", sizes: "1400x1400", type: "image/png" }],
+    }),
+  );
+});
+
 function baseOf(c: {
   req: { header: (n: string) => string | undefined };
 }): string {

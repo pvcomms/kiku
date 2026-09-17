@@ -239,8 +239,10 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
   // --- feed address (whatever host you used to get here is the one your phone can use) ---
   const origin = location.origin;
   $('#feedUrl').textContent = origin + '/feed.xml';
-  const others = HOSTS.map((h) => 'http://' + h).filter((h) => h !== origin);
+  const others = HOSTS.filter((h) => h !== origin);
   $('#alts').textContent = others.length ? 'also reachable at ' + others.join('  ·  ') : '';
+  const tn = HOSTS.find((h) => h.startsWith('https://'));
+  if (tn && !origin.startsWith('https://')) { $('#feedUrl').textContent = tn + '/feed.xml'; $('#alts').textContent = 'via Tailscale, works anywhere · on home Wi-Fi also ' + HOSTS.filter((h) => h !== tn).join('  ·  '); }
   $('#copy').addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(origin + '/feed.xml'); $('#copy').textContent = 'copied'; }
     catch { $('#copy').textContent = 'select it'; }

@@ -6,7 +6,8 @@
   "description": "聞く — paste a link, file, or text; listen on any device on your network.",
   "scripts": {
     "start": "node src/server.ts",
-    "dev": "node --watch src/server.ts"
+    "dev": "node --watch src/server.ts",
+    "test": "node --test 'test/**/*.test.ts'"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",

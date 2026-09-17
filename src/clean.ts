@@ -147,8 +147,11 @@ export function cleanInline(s: string): string {
     s
       .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
       .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-      .replace(/[*_`#>]+/g, "")
+      // HTML tags before markdown markers: `>` is part of both a tag and the
+      // marker class below, so stripping markers first would eat a tag's `>`
+      // and leave the rest of it (`<b`) stranded as literal text.
       .replace(/<[^>]+>/g, "")
+      .replace(/[*_`#>]+/g, "")
       .replace(/\s+/g, " ")
       .trim(),
   );

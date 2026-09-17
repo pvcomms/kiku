@@ -1,0 +1,18 @@
+#!/bin/zsh
+# kiku-remote — publish Kiku to your tailnet over HTTPS so the phone can reach it anywhere.
+# Needs Tailscale logged in on the Studio (menu bar app → Log in) and on the phone.
+set -e
+PORT="${KIKU_PORT:-4747}"
+STATE=$(tailscale status --json 2>/dev/null | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).BackendState' 2>/dev/null || echo unknown)
+if [ "$STATE" != "Running" ]; then
+  echo "Tailscale is not logged in on this Mac (state: $STATE)."
+  echo "Open the Tailscale menu bar app and log in, then run this again."
+  exit 1
+fi
+tailscale serve --bg --https=443 "http://127.0.0.1:${PORT}" >/dev/null
+NAME=$(tailscale status --json | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).Self.DNSName.replace(/\.$/,"")')
+echo "Kiku is on your tailnet:"
+echo "  page  https://${NAME}/"
+echo "  feed  https://${NAME}/feed.xml"
+echo "Follow the feed in Podcasts on the phone (with Tailscale on) and it works anywhere."
+echo "Undo with: tailscale serve reset"

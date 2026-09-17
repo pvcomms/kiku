@@ -495,8 +495,6 @@ await detectTailnet();
 setInterval(() => void detectTailnet(), 5 * 60 * 1000);
 serve({ fetch: app.fetch, port: PORT, hostname: "0.0.0.0" }, () => {
   console.log(
-    `[kiku] listening on ${hostList()
-      .map((h) => "http://" + h)
-      .join("  ")}  (library: ${HOME})`,
+    `[kiku] listening on ${hostList().join("  ")}  (library: ${HOME})`,
   );
 });

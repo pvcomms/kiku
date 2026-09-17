@@ -34,6 +34,7 @@ import {
 } from "./tts.ts";
 import { Library, newId, type Item } from "./library.ts";
 import { buildFeed, formatDuration } from "./feed.ts";
+import { Podcasts, fetchXml, parseFeed, type Podcast } from "./podcasts.ts";
 import { page } from "./ui.ts";
 
 const PORT = Number(process.env.KIKU_PORT ?? 4747);
@@ -66,6 +67,7 @@ type Job = {
 
 const runFile = promisify(execFile);
 const lib = new Library(HOME);
+const podcasts = new Podcasts(HOME);
 const jobs: Job[] = [];
 let pumping = false;
 
@@ -245,21 +247,32 @@ let tailnetOrigin: string | null = null;
 /** Origins the phone can use: LAN name, LAN IP, and the tailnet HTTPS name when Tailscale is up. */
 function hostList(): string[] {
   const name = os.hostname().toLowerCase();
-  const lan = [name.endsWith(".local") ? name : `${name}.local`, ...lanAddresses()].map(
-    (h) => `http://${h}:${PORT}`,
-  );
+  const lan = [
+    name.endsWith(".local") ? name : `${name}.local`,
+    ...lanAddresses(),
+  ].map((h) => `http://${h}:${PORT}`);
   const all = tailnetOrigin ? [tailnetOrigin, ...lan] : lan;
   return [...new Set(all)];
 }
 
 async function detectTailnet(): Promise<void> {
   try {
-    const { stdout } = await runFile("tailscale", ["status", "--json"], { timeout: 4000 });
+    const { stdout } = await runFile("tailscale", ["status", "--json"], {
+      timeout: 4000,
+    });
     const st = JSON.parse(stdout);
     const dns = String(st?.Self?.DNSName ?? "").replace(/\.$/, "");
     if (st?.BackendState === "Running" && dns) {
-      const { stdout: serve } = await runFile("tailscale", ["serve", "status"], { timeout: 4000 }).catch(() => ({ stdout: "" }));
-      tailnetOrigin = serve.includes(`https://${dns}`) ? `https://${dns}` : serve.includes(`http://${dns}`) ? `http://${dns}` : null;
+      const { stdout: serve } = await runFile(
+        "tailscale",
+        ["serve", "status"],
+        { timeout: 4000 },
+      ).catch(() => ({ stdout: "" }));
+      tailnetOrigin = serve.includes(`https://${dns}`)
+        ? `https://${dns}`
+        : serve.includes(`http://${dns}`)
+          ? `http://${dns}`
+          : null;
     } else tailnetOrigin = null;
   } catch {
     tailnetOrigin = null;
@@ -269,7 +282,9 @@ async function detectTailnet(): Promise<void> {
 /** First non-empty candidate; Shortcuts may send an empty string or a list of strings. */
 function firstText(...cands: unknown[]): string {
   for (const c of cands) {
-    const v = Array.isArray(c) ? c.filter((x) => typeof x === "string").join("\n") : c;
+    const v = Array.isArray(c)
+      ? c.filter((x) => typeof x === "string").join("\n")
+      : c;
     if (typeof v === "string" && v.trim()) return v;
   }
   return "";
@@ -281,8 +296,15 @@ const app = new Hono();
 app.use("*", async (c, next) => {
   await next();
   const p = c.req.path;
-  if ((p === "/api/jobs" && c.req.method === "GET") || p.startsWith("/assets/") || p === "/api/library") return;
-  console.log(`[kiku] ${c.req.method} ${p} ${c.res.status} · ${(c.req.header("user-agent") ?? "").slice(0, 70)}`);
+  if (
+    (p === "/api/jobs" && c.req.method === "GET") ||
+    p.startsWith("/assets/") ||
+    p === "/api/library"
+  )
+    return;
+  console.log(
+    `[kiku] ${c.req.method} ${p} ${c.res.status} · ${(c.req.header("user-agent") ?? "").slice(0, 70)}`,
+  );
 });
 
 app.get("/manifest.webmanifest", (c) => {
@@ -423,20 +445,28 @@ function savePositionsSoon() {
 app.get("/api/positions", (c) => c.json(positions));
 app.put("/api/position/:id", async (c) => {
   const id = c.req.param("id");
-  if (!lib.get(id)) return c.json({ error: "No such item." }, 404);
   const body = (await c.req.json().catch(() => ({}))) as { seconds?: unknown };
   const seconds = Number(body.seconds);
-  if (!Number.isFinite(seconds) || seconds < 0) return c.json({ error: "seconds?" }, 400);
-  positions[id] = { seconds: Math.floor(seconds), updatedAt: new Date().toISOString() };
+  if (!Number.isFinite(seconds) || seconds < 0)
+    return c.json({ error: "seconds?" }, 400);
+  positions[id] = {
+    seconds: Math.floor(seconds),
+    updatedAt: new Date().toISOString(),
+  };
   savePositionsSoon();
   return c.json({ ok: true });
 });
 
-app.get("/api/library", (c) => c.json({ base: baseOf(c), items: lib.list(), positions }));
+app.get("/api/library", (c) =>
+  c.json({ base: baseOf(c), items: lib.list(), positions }),
+);
 
 app.delete("/api/library/:id", async (c) => {
   const ok = await lib.remove(c.req.param("id"));
-  if (ok) { delete positions[c.req.param("id")]; savePositionsSoon(); }
+  if (ok) {
+    delete positions[c.req.param("id")];
+    savePositionsSoon();
+  }
   return ok ? c.json({ ok: true }) : c.json({ error: "No such item." }, 404);
 });
 
@@ -444,6 +474,58 @@ app.get("/feed.xml", (c) => {
   c.header("content-type", "application/rss+xml; charset=utf-8");
   c.header("cache-control", "no-cache");
   return c.body(buildFeed(lib.list(), baseOf(c)));
+});
+
+// ---------- real podcasts (subscribe by feed URL, play the enclosure directly) ----------
+
+app.post("/api/podcasts", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { feedUrl?: unknown };
+  const feedUrl = typeof body.feedUrl === "string" ? body.feedUrl.trim() : "";
+  if (!/^https?:\/\//i.test(feedUrl))
+    return c.json({ error: "Give me a podcast RSS feed URL." }, 400);
+
+  const already = podcasts.find(feedUrl);
+  if (already) return c.json(already);
+
+  let parsed;
+  try {
+    parsed = parseFeed(await fetchXml(feedUrl), 1);
+  } catch (e) {
+    return c.json(
+      { error: e instanceof Error ? e.message : "Couldn't read that feed." },
+      400,
+    );
+  }
+  const pod: Podcast = {
+    id: newId(),
+    title: parsed.title,
+    feedUrl,
+    artworkUrl: parsed.artworkUrl,
+    addedAt: new Date().toISOString(),
+  };
+  await podcasts.add(pod);
+  return c.json(pod, 201);
+});
+
+app.get("/api/podcasts", (c) => c.json(podcasts.list()));
+
+app.delete("/api/podcasts/:id", async (c) => {
+  const ok = await podcasts.remove(c.req.param("id"));
+  return ok ? c.json({ ok: true }) : c.json({ error: "No such show." }, 404);
+});
+
+app.get("/api/podcasts/:id/episodes", async (c) => {
+  const show = podcasts.get(c.req.param("id"));
+  if (!show) return c.json({ error: "No such show." }, 404);
+  try {
+    const { episodes } = parseFeed(await fetchXml(show.feedUrl), 20);
+    return c.json({ show, episodes });
+  } catch (e) {
+    return c.json(
+      { error: e instanceof Error ? e.message : "Couldn't read that feed." },
+      502,
+    );
+  }
 });
 
 const ASSET_TYPES: Record<string, string> = {
@@ -482,7 +564,10 @@ app.get("/text/:id", async (c) => {
   return c.body(txt);
 });
 
-type Ctx = { req: { method: string; header: (n: string) => string | undefined }; notFound: () => Response | Promise<Response> };
+type Ctx = {
+  req: { method: string; header: (n: string) => string | undefined };
+  notFound: () => Response | Promise<Response>;
+};
 
 async function serveAudio(c: Ctx, name: string): Promise<Response> {
   const file = path.join(lib.audioDir, path.basename(name));
@@ -524,11 +609,12 @@ async function serveAudio(c: Ctx, name: string): Promise<Response> {
   const body = isHead
     ? null
     : (Readable.toWeb(fs.createReadStream(file)) as ReadableStream);
-  return new Response(body, { status: 200, headers });}
+  return new Response(body, { status: 200, headers });
+}
 
-app.on(["GET", "HEAD"], "/audio/:file", (c) => serveAudio(c, c.req.param("file")));
-
-
+app.on(["GET", "HEAD"], "/audio/:file", (c) =>
+  serveAudio(c, c.req.param("file")),
+);
 
 // ---------- public feed (for players that fetch from their own servers, e.g. Pocket Casts) ----------
 // Only these routes are ever exposed by `kiku-public`; the token is the password.
@@ -546,7 +632,9 @@ async function publicToken(): Promise<string> {
 const pub = new Hono();
 let TOKEN = "";
 
-function publicBase(c: { req: { header: (n: string) => string | undefined } }): string {
+function publicBase(c: {
+  req: { header: (n: string) => string | undefined };
+}): string {
   const forced = process.env.KIKU_PUBLIC_BASE;
   if (forced) return forced.replace(/\/$/, "") + `/p/${TOKEN}`;
   return `${baseOf(c)}/p/${TOKEN}`;
@@ -554,7 +642,9 @@ function publicBase(c: { req: { header: (n: string) => string | undefined } }): 
 
 pub.use("*", async (c, next) => {
   await next();
-  console.log(`[kiku] public ${c.req.method} ${c.req.path.replace(TOKEN, "…")} ${c.res.status} · ${(c.req.header("user-agent") ?? "").slice(0, 70)}`);
+  console.log(
+    `[kiku] public ${c.req.method} ${c.req.path.replace(TOKEN, "…")} ${c.res.status} · ${(c.req.header("user-agent") ?? "").slice(0, 70)}`,
+  );
 });
 
 pub.get("/p/:token/feed.xml", (c) => {
@@ -578,10 +668,15 @@ pub.get("/p/:token/cover.png", async (c) => {
   return c.body(buf);
 });
 
-pub.get("/p/:token/", (c) => (c.req.param("token") === TOKEN ? c.text("Kiku private feed. Add feed.xml to your podcast app.") : c.notFound()));
+pub.get("/p/:token/", (c) =>
+  c.req.param("token") === TOKEN
+    ? c.text("Kiku private feed. Add feed.xml to your podcast app.")
+    : c.notFound(),
+);
 pub.notFound((c) => c.text("Not found", 404));
 
 await lib.init();
+await podcasts.init();
 await loadPositions();
 await detectTailnet();
 TOKEN = await publicToken();

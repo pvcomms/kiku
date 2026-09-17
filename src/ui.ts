@@ -157,6 +157,17 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
   ol li { margin: 4px 0; }
   .alts { font: 12px/1.6 var(--mono); color: var(--ink-3); margin-top: 12px; }
 
+  .text { height: 44px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--ink); font: 15px var(--sans); padding: 0 12px; }
+  .text::placeholder { color: var(--ink-3); }
+  .text:focus { outline: none; border-color: var(--ink-3); }
+  .url .text { flex: 1; }
+  .show-head { display: flex; align-items: center; gap: 12px; padding: 14px 6px; margin: 0 -6px; border-top: 1px solid var(--line); border-radius: 8px; cursor: pointer; transition: background-color 160ms var(--ease); }
+  .show:last-child .show-head { border-bottom: 1px solid var(--line); }
+  .show-head:hover { background: var(--paper-2); }
+  .show-head .art { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; background: var(--paper-3); flex-shrink: 0; }
+  .show-head .t { flex: 1; font-family: var(--display); font-size: 21px; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .episodes .item:first-child { border-top: none; }
+
   .player { position: fixed; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--paper-2) 88%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-top: 1px solid var(--line); padding: 12px 20px calc(12px + env(safe-area-inset-bottom)); transform: translateY(110%); transition: transform 500ms var(--ease); }
   .player.on { transform: none; }
   .player .in { max-width: 620px; margin: 0 auto; }
@@ -201,6 +212,19 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
   <section class="rise">
     <h2>Library <small id="count"></small></h2>
     <div id="library"><div class="empty">Nothing yet. Paste something above.</div></div>
+  </section>
+
+  <section class="rise">
+    <h2>Podcasts <small id="showCount"></small></h2>
+    <form class="feedbox" id="subscribeForm" autocomplete="off" style="margin-bottom:16px">
+      <p>Paste a show's RSS feed URL. Episodes play right here, straight from the publisher's file — no Apple Podcasts, no account, no upsell redirect.</p>
+      <div class="url">
+        <input class="text" type="url" id="feedInput" placeholder="https://feeds.simplecast.com/…" required>
+        <button class="btn-2" type="submit">subscribe</button>
+      </div>
+      <div class="err" id="subErr" role="status"></div>
+    </form>
+    <div id="shows"><div class="empty">No shows yet. Paste an RSS feed URL above.</div></div>
   </section>
 
   <section class="rise">
@@ -339,7 +363,8 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
   function play(d) {
     if (current === d.id) { audio.paused ? audio.play() : audio.pause(); return; }
     current = d.id;
-    audio.src = '/audio/' + encodeURIComponent(d.file);
+    const isExternal = d.file.startsWith('http://') || d.file.startsWith('https://');
+    audio.src = isExternal ? d.file : '/audio/' + encodeURIComponent(d.file);
     $('#playerTitle').textContent = d.title;
     player.classList.add('on');
     let pos = Number(store.get('kiku.pos.' + d.id) || 0);
@@ -347,7 +372,7 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
     audio.addEventListener('loadedmetadata', () => { if (pos > 5 && pos < audio.duration - 10) audio.currentTime = pos; }, { once: true });
     audio.play().catch(() => {});
     if ('mediaSession' in navigator) {
-      navigator.mediaSession.metadata = new MediaMetadata({ title: d.title, artist: d.by || 'Kiku', album: 'Kiku', artwork: [{ src: '/cover.png', sizes: '1400x1400', type: 'image/png' }] });
+      navigator.mediaSession.metadata = new MediaMetadata({ title: d.title, artist: d.by || 'Kiku', album: 'Kiku', artwork: [{ src: d.art || '/cover.png', sizes: '1400x1400', type: 'image/png' }] });
       navigator.mediaSession.setActionHandler('seekbackward', () => { audio.currentTime = Math.max(0, audio.currentTime - 15); });
       navigator.mediaSession.setActionHandler('seekforward', () => { audio.currentTime = Math.min(audio.duration, audio.currentTime + 30); });
     }
@@ -360,12 +385,82 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
   audio.addEventListener('pause', () => { if (current) push(current, Math.floor(audio.currentTime)); });
   audio.addEventListener('ended', () => { if (current) { store.set('kiku.pos.' + current, String(Math.floor(audio.duration))); push(current, Math.floor(audio.duration)); } loadLibrary(); });
 
+  // --- podcasts ---
+  function showHtml(s) {
+    return \`<div class="show" data-id="\${s.id}" data-title="\${esc(s.title)}">
+      <div class="show-head">
+        \${s.artworkUrl ? '<img class="art" src="' + esc(s.artworkUrl) + '" alt="">' : '<span class="art"></span>'}
+        <span class="t">\${esc(s.title)}</span>
+        <button class="icon unsub" type="button" title="Unsubscribe"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+      </div>
+      <div class="episodes" hidden></div>
+    </div>\`;
+  }
+  function episodeHtml(show, ep) {
+    return \`<div class="item\${current === ep.id ? ' playing' : ''}" data-id="\${ep.id}" data-file="\${esc(ep.enclosureUrl)}" data-title="\${esc(ep.title)}" data-by="\${esc(show.title)}" data-art="\${esc(show.artworkUrl || '')}">
+      <button class="play" type="button" aria-label="Play"><svg viewBox="0 0 14 14"><path d="M3 1.5v11l9-5.5z" fill="currentColor"/></svg></button>
+      <div class="body">
+        <span class="t">\${esc(ep.title)}</span>
+        <span class="m">\${ep.seconds ? fmt(ep.seconds) + ' · ' : ''}\${day(ep.pubDate)}</span>
+      </div>
+    </div>\`;
+  }
+  async function loadShows() {
+    let shows = [];
+    try { shows = await (await fetch('/api/podcasts')).json(); } catch {}
+    $('#showCount').textContent = shows.length ? shows.length + (shows.length === 1 ? ' show' : ' shows') : '';
+    $('#shows').innerHTML = shows.length ? shows.map(showHtml).join('') : '<div class="empty">No shows yet. Paste an RSS feed URL above.</div>';
+  }
+  const subForm = $('#subscribeForm'), feedInput = $('#feedInput'), subErr = $('#subErr');
+  subForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    subErr.textContent = '';
+    const url = feedInput.value.trim();
+    if (!url) return;
+    try {
+      const res = await fetch('/api/podcasts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ feedUrl: url }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not add that feed.');
+      feedInput.value = '';
+      loadShows();
+    } catch (e) { subErr.textContent = e.message; }
+  });
+  $('#shows').addEventListener('click', async (e) => {
+    const unsub = e.target.closest('.unsub');
+    if (unsub) {
+      const show = e.target.closest('.show');
+      if (!confirm('Unsubscribe from "' + show.dataset.title + '"?')) return;
+      await fetch('/api/podcasts/' + show.dataset.id, { method: 'DELETE' });
+      loadShows();
+      return;
+    }
+    const epRow = e.target.closest('.item');
+    if (epRow) { play(epRow.dataset); return; }
+    const head = e.target.closest('.show-head');
+    if (head) {
+      const show = head.closest('.show');
+      const panel = show.querySelector('.episodes');
+      const opening = panel.hidden;
+      panel.hidden = !opening;
+      if (opening && !panel.dataset.loaded) {
+        panel.innerHTML = '<div class="empty">Loading…</div>';
+        try {
+          const d = await (await fetch('/api/podcasts/' + show.dataset.id + '/episodes')).json();
+          if (!d.episodes) throw new Error(d.error || 'Could not load episodes.');
+          panel.dataset.loaded = '1';
+          panel.innerHTML = d.episodes.length ? d.episodes.map((ep) => episodeHtml(d.show, ep)).join('') : '<div class="empty">No episodes found.</div>';
+        } catch (e) { panel.innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
+      }
+    }
+  });
+
   // --- ?u= prefill (used by the Shortcut fallback) ---
   const params = new URLSearchParams(location.search);
   const pre = params.get('u') || params.get('url') || params.get('text');
   if (pre) { input.value = pre; history.replaceState(null, '', location.pathname); form.requestSubmit(); }
 
   loadLibrary();
+  loadShows();
   poll(false);
 })();
 </script>

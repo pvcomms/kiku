@@ -9,10 +9,18 @@ if [ "$STATE" != "Running" ]; then
   echo "Open the Tailscale menu bar app and log in, then run this again."
   exit 1
 fi
-tailscale serve --bg --https=443 "http://127.0.0.1:${PORT}" >/dev/null
 NAME=$(tailscale status --json | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).Self.DNSName.replace(/\.$/,"")')
+CERTS=$(tailscale status --json | node -pe '(JSON.parse(require("fs").readFileSync(0,"utf8")).CertDomains||[]).length')
+if [ "$CERTS" != "0" ]; then
+  tailscale serve --bg --https=443 "http://127.0.0.1:${PORT}" >/dev/null
+  SCHEME=https
+else
+  tailscale serve --bg --http=80 "http://127.0.0.1:${PORT}" >/dev/null
+  SCHEME=http
+  echo "(HTTPS certificates are not enabled on your tailnet yet: login.tailscale.com/admin/dns → Enable HTTPS, then run kiku-remote again for an https address.)"
+fi
 echo "Kiku is on your tailnet:"
-echo "  page  https://${NAME}/"
-echo "  feed  https://${NAME}/feed.xml"
+echo "  page  ${SCHEME}://${NAME}/"
+echo "  feed  ${SCHEME}://${NAME}/feed.xml"
 echo "Follow the feed in Podcasts on the phone (with Tailscale on) and it works anywhere."
 echo "Undo with: tailscale serve reset"

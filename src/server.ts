@@ -6,6 +6,8 @@ import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import {
   fromFile,
@@ -59,6 +61,7 @@ type Job = {
   input: Input;
 };
 
+const runFile = promisify(execFile);
 const lib = new Library(HOME);
 const jobs: Job[] = [];
 let pumping = false;
@@ -234,13 +237,30 @@ function lanAddresses(): string[] {
   return out;
 }
 
+let tailnetOrigin: string | null = null;
+
+/** Origins the phone can use: LAN name, LAN IP, and the tailnet HTTPS name when Tailscale is up. */
 function hostList(): string[] {
   const name = os.hostname().toLowerCase();
-  const hosts = [
-    name.endsWith(".local") ? name : `${name}.local`,
-    ...lanAddresses(),
-  ];
-  return [...new Set(hosts)].map((h) => `${h}:${PORT}`);
+  const lan = [name.endsWith(".local") ? name : `${name}.local`, ...lanAddresses()].map(
+    (h) => `http://${h}:${PORT}`,
+  );
+  const all = tailnetOrigin ? [tailnetOrigin, ...lan] : lan;
+  return [...new Set(all)];
+}
+
+async function detectTailnet(): Promise<void> {
+  try {
+    const { stdout } = await runFile("tailscale", ["status", "--json"], { timeout: 4000 });
+    const st = JSON.parse(stdout);
+    const dns = String(st?.Self?.DNSName ?? "").replace(/\.$/, "");
+    if (st?.BackendState === "Running" && dns) {
+      const { stdout: serve } = await runFile("tailscale", ["serve", "status"], { timeout: 4000 }).catch(() => ({ stdout: "" }));
+      tailnetOrigin = serve.includes(`https://${dns}`) ? `https://${dns}` : serve.includes(`http://${dns}`) ? `http://${dns}` : null;
+    } else tailnetOrigin = null;
+  } catch {
+    tailnetOrigin = null;
+  }
 }
 
 /** First non-empty candidate; Shortcuts may send an empty string or a list of strings. */
@@ -471,6 +491,8 @@ app.on(["GET", "HEAD"], "/audio/:file", async (c) => {
 });
 
 await lib.init();
+await detectTailnet();
+setInterval(() => void detectTailnet(), 5 * 60 * 1000);
 serve({ fetch: app.fetch, port: PORT, hostname: "0.0.0.0" }, () => {
   console.log(
     `[kiku] listening on ${hostList()

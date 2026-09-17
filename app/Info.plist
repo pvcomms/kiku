@@ -15,9 +15,11 @@
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHumanReadableCopyright</key><string>Param Vaswani</string>
+  <!-- The stand is plain http on the LAN/loopback only; every off-origin link is handed to the
+       default browser instead of loading in this view (see main.swift), so the narrower
+       local-networking exception is enough -- no need to disable ATS globally. -->
   <key>NSAppTransportSecurity</key>
   <dict>
-    <key>NSAllowsArbitraryLoads</key><true/>
     <key>NSAllowsLocalNetworking</key><true/>
   </dict>
 </dict>

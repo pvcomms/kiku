@@ -1,0 +1,18 @@
+#!/bin/zsh
+# kiku-public — expose ONLY the feed + audio to the public internet through Tailscale Funnel,
+# at a secret link, so players that fetch from their own servers (Pocket Casts) can use it.
+set -e
+PUBLIC_PORT="${KIKU_PUBLIC_PORT:-4748}"
+TOKEN=$(cat ~/Kiku/public-token 2>/dev/null || true)
+if [ -z "$TOKEN" ]; then echo "no token yet: start kiku once (launchctl kickstart -k gui/$(id -u)/com.param.kiku)"; exit 1; fi
+NAME=$(tailscale status --json | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).Self.DNSName.replace(/\.$/,"")')
+if [ "$1" = "off" ]; then tailscale funnel --https=8443 off; echo "public feed is off"; exit 0; fi
+if ! tailscale funnel --bg --https=8443 "http://127.0.0.1:${PUBLIC_PORT}"; then
+  echo; echo "Funnel is not enabled for this tailnet yet. Enable it (and HTTPS certificates) in the admin console, then run kiku-public again."
+  exit 1
+fi
+echo
+echo "Public feed (secret link — anyone with it can listen, nothing else is exposed):"
+echo "  https://${NAME}:8443/p/${TOKEN}/feed.xml"
+echo "Pocket Casts → Discover → search box → paste it (or Profile → Files/Add by URL)."
+echo "Turn it off with: kiku-public off"

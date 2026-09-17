@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { execFile } from "node:child_process";
+import crypto from "node:crypto";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import {
@@ -39,6 +40,8 @@ const PORT = Number(process.env.KIKU_PORT ?? 4747);
 const HOME = process.env.KIKU_HOME ?? path.join(os.homedir(), "Kiku");
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const COVER = path.join(ROOT, "assets", "cover.png");
+const PUBLIC_PORT = Number(process.env.KIKU_PUBLIC_PORT ?? 4748);
+const TOKEN_FILE = path.join(HOME, "public-token");
 
 type Input =
   | { kind: "url"; url: string }
@@ -398,10 +401,42 @@ app.get("/api/jobs/:id", (c) => {
   return j ? c.json(publicJob(j)) : c.json({ error: "No such job." }, 404);
 });
 
-app.get("/api/library", (c) => c.json({ base: baseOf(c), items: lib.list() }));
+// ---------- playback positions (so the phone, the iPad and the Mac resume the same spot) ----------
+const POS_FILE = path.join(HOME, "positions.json");
+let positions: Record<string, { seconds: number; updatedAt: string }> = {};
+async function loadPositions() {
+  try {
+    positions = JSON.parse(await fsp.readFile(POS_FILE, "utf8"));
+  } catch {
+    positions = {};
+  }
+}
+let posTimer: NodeJS.Timeout | null = null;
+function savePositionsSoon() {
+  if (posTimer) return;
+  posTimer = setTimeout(() => {
+    posTimer = null;
+    fsp.writeFile(POS_FILE, JSON.stringify(positions)).catch(() => {});
+  }, 1500);
+}
+
+app.get("/api/positions", (c) => c.json(positions));
+app.put("/api/position/:id", async (c) => {
+  const id = c.req.param("id");
+  if (!lib.get(id)) return c.json({ error: "No such item." }, 404);
+  const body = (await c.req.json().catch(() => ({}))) as { seconds?: unknown };
+  const seconds = Number(body.seconds);
+  if (!Number.isFinite(seconds) || seconds < 0) return c.json({ error: "seconds?" }, 400);
+  positions[id] = { seconds: Math.floor(seconds), updatedAt: new Date().toISOString() };
+  savePositionsSoon();
+  return c.json({ ok: true });
+});
+
+app.get("/api/library", (c) => c.json({ base: baseOf(c), items: lib.list(), positions }));
 
 app.delete("/api/library/:id", async (c) => {
   const ok = await lib.remove(c.req.param("id"));
+  if (ok) { delete positions[c.req.param("id")]; savePositionsSoon(); }
   return ok ? c.json({ ok: true }) : c.json({ error: "No such item." }, 404);
 });
 
@@ -447,8 +482,10 @@ app.get("/text/:id", async (c) => {
   return c.body(txt);
 });
 
-app.on(["GET", "HEAD"], "/audio/:file", async (c) => {
-  const file = path.join(lib.audioDir, path.basename(c.req.param("file")));
+type Ctx = { req: { method: string; header: (n: string) => string | undefined }; notFound: () => Response | Promise<Response> };
+
+async function serveAudio(c: Ctx, name: string): Promise<Response> {
+  const file = path.join(lib.audioDir, path.basename(name));
   const stat = await fsp.stat(file).catch(() => null);
   if (!stat || !stat.isFile()) return c.notFound();
   const headers: Record<string, string> = {
@@ -487,11 +524,68 @@ app.on(["GET", "HEAD"], "/audio/:file", async (c) => {
   const body = isHead
     ? null
     : (Readable.toWeb(fs.createReadStream(file)) as ReadableStream);
-  return new Response(body, { status: 200, headers });
+  return new Response(body, { status: 200, headers });}
+
+app.on(["GET", "HEAD"], "/audio/:file", (c) => serveAudio(c, c.req.param("file")));
+
+
+
+// ---------- public feed (for players that fetch from their own servers, e.g. Pocket Casts) ----------
+// Only these routes are ever exposed by `kiku-public`; the token is the password.
+
+async function publicToken(): Promise<string> {
+  try {
+    const t = (await fsp.readFile(TOKEN_FILE, "utf8")).trim();
+    if (t.length >= 16) return t;
+  } catch {}
+  const t = crypto.randomBytes(18).toString("base64url");
+  await fsp.writeFile(TOKEN_FILE, t + "\n", { mode: 0o600 });
+  return t;
+}
+
+const pub = new Hono();
+let TOKEN = "";
+
+function publicBase(c: { req: { header: (n: string) => string | undefined } }): string {
+  const forced = process.env.KIKU_PUBLIC_BASE;
+  if (forced) return forced.replace(/\/$/, "") + `/p/${TOKEN}`;
+  return `${baseOf(c)}/p/${TOKEN}`;
+}
+
+pub.use("*", async (c, next) => {
+  await next();
+  console.log(`[kiku] public ${c.req.method} ${c.req.path.replace(TOKEN, "…")} ${c.res.status} · ${(c.req.header("user-agent") ?? "").slice(0, 70)}`);
 });
 
+pub.get("/p/:token/feed.xml", (c) => {
+  if (c.req.param("token") !== TOKEN) return c.notFound();
+  c.header("content-type", "application/rss+xml; charset=utf-8");
+  c.header("cache-control", "no-cache");
+  return c.body(buildFeed(lib.list(), publicBase(c)));
+});
+
+pub.on(["GET", "HEAD"], "/p/:token/audio/:file", (c) => {
+  if (c.req.param("token") !== TOKEN) return c.notFound();
+  return serveAudio(c, c.req.param("file"));
+});
+
+pub.get("/p/:token/cover.png", async (c) => {
+  if (c.req.param("token") !== TOKEN) return c.notFound();
+  const buf = await fsp.readFile(COVER).catch(() => null);
+  if (!buf) return c.notFound();
+  c.header("content-type", "image/png");
+  c.header("cache-control", "public, max-age=86400");
+  return c.body(buf);
+});
+
+pub.get("/p/:token/", (c) => (c.req.param("token") === TOKEN ? c.text("Kiku private feed. Add feed.xml to your podcast app.") : c.notFound()));
+pub.notFound((c) => c.text("Not found", 404));
+
 await lib.init();
+await loadPositions();
 await detectTailnet();
+TOKEN = await publicToken();
+serve({ fetch: pub.fetch, port: PUBLIC_PORT, hostname: "127.0.0.1" });
 setInterval(() => void detectTailnet(), 5 * 60 * 1000);
 serve({ fetch: app.fetch, port: PORT, hostname: "0.0.0.0" }, () => {
   console.log(

@@ -9,7 +9,7 @@ Paste a link, a file, or the words themselves. The Studio reads it aloud with Ko
 
 ## Use it
 
-**Phone.** Share a link from Brave to the **Kiku** shortcut. Or open the page in Brave, paste, press _Read it to me_. New readings show up in Apple Podcasts once you follow the feed: Podcasts → Library → ⋯ → _Follow a Show by URL_ → paste the feed address. The page itself also plays audio, remembers your place, and works with the lock screen. (Verified on the Mac Podcasts app: the plain-http `.local` feed is accepted and both episodes appear.)
+**Phone.** Share a link from Brave to the **Kiku** shortcut. Or open the page in Brave, paste, press _Read it to me_. New readings show up in Apple Podcasts once you follow the feed: Podcasts → Library → ⋯ → _Follow a Show by URL_ → paste the feed address. The page itself is a player too: background audio, lock-screen controls, and your position is kept on the Studio so the phone, the iPad and the Mac resume the same spot (Brave → Share → Add to Home Screen gives it an icon). (Verified on the Mac Podcasts app: the plain-http `.local` feed is accepted and both episodes appear.)
 
 **Mac.** `/Applications/Kiku.app` opens the page in its own window and starts the service if it is asleep. Or the terminal:
 
@@ -74,6 +74,13 @@ kiku-remote
 ```
 
 That runs `tailscale serve` and prints an `https://mac-studio.<tailnet>.ts.net/` address with a real certificate. Follow that feed in Podcasts instead of the `.local` one and it works on cellular. Nothing is exposed to the public internet; only devices on your tailnet can reach it. (A truly public URL is possible with `tailscale funnel`, but then anyone with the link can queue readings on your Studio, so it would need a password first.)
+
+## Which player
+
+- **Kiku's own page** — free, yours, no account: open the tailnet address on any device, press play. Positions sync through the Studio.
+- **RSS Guard** (Studio, MacBook) — FOSS desktop reader with a built-in enclosure player; the feed is already in the Studio's copy under a *Kiku* folder. On another Mac add `http://mac-studio.tail497a8a.ts.net/feed.xml`.
+- **Apple Podcasts** — not open source, but it fetches from the device, so the private feed stays private; syncs iPhone↔iPad.
+- **Pocket Casts** — the apps are open source (MPL-2.0) but the service crawls feeds from its cloud, so it needs the public secret link from `kiku-public`, and Automattic sees the titles.
 
 ## Shortcut (build once on the phone, two actions)
 

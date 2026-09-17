@@ -303,11 +303,12 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
   let current = null;
   async function loadLibrary() {
     let items = [];
-    try { items = (await (await fetch('/api/library')).json()).items; } catch {}
+    let serverPos = {};
+    try { const d = await (await fetch('/api/library')).json(); items = d.items; serverPos = d.positions || {}; } catch {}
     $('#count').textContent = items.length ? items.length + (items.length === 1 ? ' reading' : ' readings') : '';
     if (!items.length) { $('#library').innerHTML = '<div class="empty">Nothing yet. Paste something above.</div>'; return; }
     $('#library').innerHTML = items.map((it) => {
-      const pos = Number(store.get('kiku.pos.' + it.id) || 0);
+      const pos = Math.max(Number(store.get('kiku.pos.' + it.id) || 0), Number(serverPos[it.id]?.seconds || 0));
       const done = pos > 0 && it.seconds - pos < 20;
       const by = [it.author, it.site].filter(Boolean).join(' · ');
       return \`<div class="item\${current === it.id ? ' playing' : ''}" data-id="\${it.id}" data-file="\${esc(it.file)}" data-title="\${esc(it.title)}" data-by="\${esc(by)}">
@@ -341,7 +342,8 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
     audio.src = '/audio/' + encodeURIComponent(d.file);
     $('#playerTitle').textContent = d.title;
     player.classList.add('on');
-    const pos = Number(store.get('kiku.pos.' + d.id) || 0);
+    let pos = Number(store.get('kiku.pos.' + d.id) || 0);
+    fetch('/api/positions').then((r) => r.json()).then((p) => { const sp = Number(p[d.id]?.seconds || 0); if (sp > pos) { pos = sp; if (audio.readyState >= 1 && audio.currentTime < 5 && pos < audio.duration - 10) audio.currentTime = pos; } }).catch(() => {});
     audio.addEventListener('loadedmetadata', () => { if (pos > 5 && pos < audio.duration - 10) audio.currentTime = pos; }, { once: true });
     audio.play().catch(() => {});
     if ('mediaSession' in navigator) {
@@ -352,8 +354,11 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
     document.querySelectorAll('.item').forEach((el) => el.classList.toggle('playing', el.dataset.id === d.id));
   }
   let lastSave = 0;
-  audio.addEventListener('timeupdate', () => { if (current && Date.now() - lastSave > 3000) { lastSave = Date.now(); store.set('kiku.pos.' + current, String(Math.floor(audio.currentTime))); } });
-  audio.addEventListener('ended', () => { if (current) store.set('kiku.pos.' + current, String(Math.floor(audio.duration))); loadLibrary(); });
+  let lastPush = 0;
+  const push = (id, secs) => fetch('/api/position/' + id, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ seconds: secs }), keepalive: true }).catch(() => {});
+  audio.addEventListener('timeupdate', () => { if (!current) return; const now = Date.now(); if (now - lastSave > 3000) { lastSave = now; store.set('kiku.pos.' + current, String(Math.floor(audio.currentTime))); } if (now - lastPush > 10000) { lastPush = now; push(current, Math.floor(audio.currentTime)); } });
+  audio.addEventListener('pause', () => { if (current) push(current, Math.floor(audio.currentTime)); });
+  audio.addEventListener('ended', () => { if (current) { store.set('kiku.pos.' + current, String(Math.floor(audio.duration))); push(current, Math.floor(audio.duration)); } loadLibrary(); });
 
   // --- ?u= prefill (used by the Shortcut fallback) ---
   const params = new URLSearchParams(location.search);

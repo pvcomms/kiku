@@ -32,6 +32,7 @@ kiku/
     tts.py         the MLX driver, run inside .venv
     install-launchd  renders launchd/…plist.template for this machine and loads it
     setup-python.sh  builds .venv from pyproject.toml
+    shot.mjs         the README screenshot, from a second instance seeded with synthetic entries
   app/             Swift wrapper → /Applications/Kiku.app
   launchd/         com.param.kiku.plist.template — keeps the server up; bin/install-launchd fills it in
   shortcut/        the iOS Share Sheet shortcut, as a plist, for reference

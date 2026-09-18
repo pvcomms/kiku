@@ -30,8 +30,9 @@ kiku/
     kiku-remote    tailscale serve — the tailnet address
     kiku-public    secret public link, for players that crawl from a cloud
     tts.py         the MLX driver, run inside .venv
+    install-launchd  renders launchd/…plist.template for this machine and loads it
   app/             Swift wrapper → /Applications/Kiku.app
-  launchd/         com.param.kiku.plist — keeps the server up
+  launchd/         com.param.kiku.plist.template — keeps the server up; bin/install-launchd fills it in
   shortcut/        the iOS Share Sheet shortcut, as a plist, for reference
   assets/          self-hosted fonts, cover art, icon
   test/            clean, extract, textfeeds

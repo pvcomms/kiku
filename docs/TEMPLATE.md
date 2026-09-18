@@ -4,16 +4,16 @@ kiku is close to generic already — the seam is mostly hostnames and one hardwa
 
 ## What is Param's
 
-| Thing                                    | Where                           | Replace with                                    |
-| ---------------------------------------- | ------------------------------- | ----------------------------------------------- |
-| `<your-mac>.local` in the docs           | README, `shortcut/Kiku.plist`   | your machine's hostname; the server prints it   |
-| `<mac>.<your-tailnet>.ts.net`            | README                          | your own tailnet; `bin/kiku-remote` prints it   |
-| `~/Kiku` as the data directory           | `KIKU_HOME`                     | anywhere                                        |
-| Ports 4747 / 4748                        | `KIKU_PORT`, `KIKU_PUBLIC_PORT` | anything free                                   |
-| `com.param.kiku` LaunchAgent label       | `launchd/com.param.kiku.plist`  | your own reverse-DNS label                      |
-| The 220 subscribed feeds                 | `~/Kiku/`, not the repo         | your own; `POST /api/feeds/import` takes a list |
-| Cover art and icon                       | `assets/`                       | yours                                           |
-| Default voice `af_heart`                 | `src/tts.ts`                    | any of the bundled Kokoro voices                |
+| Thing                              | Where                                                          | Replace with                                    |
+| ---------------------------------- | -------------------------------------------------------------- | ----------------------------------------------- |
+| `<your-mac>.local` in the docs     | README, `shortcut/Kiku.plist`                                  | your machine's hostname; the server prints it   |
+| `<mac>.<your-tailnet>.ts.net`      | README                                                         | your own tailnet; `bin/kiku-remote` prints it   |
+| `~/Kiku` as the data directory     | `KIKU_HOME`                                                    | anywhere                                        |
+| Ports 4747 / 4748                  | `KIKU_PORT`, `KIKU_PUBLIC_PORT`                                | anything free                                   |
+| `com.param.kiku` LaunchAgent label | `launchd/com.param.kiku.plist.template`, `bin/install-launchd` | your own reverse-DNS label                      |
+| The 220 subscribed feeds           | `~/Kiku/`, not the repo                                        | your own; `POST /api/feeds/import` takes a list |
+| Cover art and icon                 | `assets/`                                                      | yours                                           |
+| Default voice `af_heart`           | `src/tts.ts`                                                   | any of the bundled Kokoro voices                |
 
 ## What is the instrument
 
@@ -33,7 +33,8 @@ recommendation, nothing leaving the machine. A fork that adds a queue is a diffe
 3. `pnpm start`, open `http://<your-host>.local:4747`.
 4. Follow `http://<your-host>.local:4747/feed.xml` in any podcast player on the network.
 5. Optional: `bin/kiku-remote` for a tailnet address that works on cellular.
-6. Optional: `app/build.sh` for the Mac wrapper, and the LaunchAgent plist to keep it up.
+6. Optional: `app/build.sh` for the Mac wrapper, and `bin/install-launchd` to keep it running
+   across logins and crashes.
 
 ## What will not work yet
 

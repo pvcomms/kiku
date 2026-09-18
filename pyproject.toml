@@ -1,0 +1,17 @@
+# The Python half of kiku: the environment bin/tts.py runs in. src/tts.ts spawns
+# `.venv/bin/python bin/tts.py`, so the environment must be `.venv` at the repo root.
+# Build it with bin/setup-python.sh. Rebuild it rather than editing it.
+# Pinned to the versions the reference machine runs (2026-09-19).
+[project]
+name = "kiku-tts"
+version = "0.1.0"
+description = "Kokoro-82M through mlx-audio: the speech step of kiku"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "mlx-audio==0.5.4",
+  "misaki[en]==0.9.4",
+  "soundfile==0.14.0",
+  "numpy==2.5.3",
+  # misaki's English G2P loads this spaCy pipeline. It is a wheel on GitHub, not on PyPI.
+  "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+]

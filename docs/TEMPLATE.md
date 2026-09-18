@@ -27,8 +27,8 @@ recommendation, nothing leaving the machine. A fork that adds a queue is a diffe
 
 ## Running it against your own life
 
-1. Apple silicon Mac. `pnpm install`, then create the Python venv and install `mlx-audio`
-   (Kokoro-82M downloads on first run).
+1. Apple silicon Mac. `pnpm install`, then `bin/setup-python.sh` builds `.venv` from
+   `pyproject.toml` (Kokoro-82M downloads on the first reading).
 2. `ffmpeg` on the PATH.
 3. `pnpm start`, open `http://<your-host>.local:4747`.
 4. Follow `http://<your-host>.local:4747/feed.xml` in any podcast player on the network.

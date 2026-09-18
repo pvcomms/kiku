@@ -52,3 +52,18 @@ a secret link for that narrow case.
 **2026-09-19 — Doc set adopted.**
 Repo joined the `cfap` constellation standard: `AGENTS.md`, `docs/ARCHITECTURE.md`, this
 file, `docs/TEMPLATE.md`, `docs/features/`. `~/Code/cfap/bin/scan.py` reports on it.
+
+---
+
+**2026-09-19 — Brought to FOSS standard; the typecheck is on.**
+`pnpm typecheck` runs `tsc --noEmit` with the `nodenext` and `erasableSyntaxOnly` settings that
+match Node's type stripping, and runs before every `pnpm test` as `pretest`. The first run was
+clean, so the "no typecheck" cost recorded above is paid off; `typescript` and `@types/node`
+are the only new dependencies, both dev-only, taken because a green test run that ignored types
+was the sharp edge every reader of this repo tripped on. The Python half is declared in
+`pyproject.toml` and built by `bin/setup-python.sh`, pinned to the versions the reference
+machine runs. The launchd plist became a template rendered by `bin/install-launchd`, so no home
+directory is tracked. Personal network names left the docs for placeholders; the page prints
+its own addresses. Screenshots come from a second instance seeded with synthetic entries, never
+from the library someone listens to. `CONTRIBUTING.md`, `SECURITY.md` and `CHANGELOG.md` say
+the rest.

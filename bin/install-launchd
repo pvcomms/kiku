@@ -1,0 +1,29 @@
+#!/bin/sh
+# install-launchd — keep kiku running: start at login, restart on crash.
+# Renders launchd/com.param.kiku.plist.template for this machine (home directory, where this
+# clone lives, which node) into ~/Library/LaunchAgents/com.param.kiku.plist and loads it.
+#   bin/install-launchd            install or reinstall, then start
+#   bin/install-launchd --print    print the rendered plist to stdout and change nothing
+set -eu
+LABEL=com.param.kiku
+REPO=$(cd "$(dirname "$0")/.." && pwd)
+NODE=$(command -v node) || { echo "install-launchd: node is not on PATH" >&2; exit 1; }
+
+render() {
+  sed -e "s|__HOME__|$HOME|g" -e "s|__REPO__|$REPO|g" -e "s|__NODE__|$NODE|g" \
+    "$REPO/launchd/$LABEL.plist.template"
+}
+
+if [ "${1:-}" = "--print" ]; then render; exit 0; fi
+
+DEST="$HOME/Library/LaunchAgents/$LABEL.plist"
+DOMAIN="gui/$(id -u)"
+mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+render > "$DEST"
+plutil -lint "$DEST" >/dev/null
+launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
+launchctl bootstrap "$DOMAIN" "$DEST"
+echo "installed $DEST and started $LABEL"
+echo "page     http://$(hostname -s | tr '[:upper:]' '[:lower:]').local:4747"
+echo "log      tail -f ~/Library/Logs/kiku.log"
+echo "restart  launchctl kickstart -k $DOMAIN/$LABEL"

@@ -8,19 +8,21 @@ Constellation-wide rules: `~/Code/cfap/AGENTS.md`. Read it once, then this. The 
 Node 25 with native type stripping — TypeScript runs directly, **there is no build step**, and
 imports must carry explicit `.ts` extensions. Hono + `@hono/node-server` for HTTP.
 `defuddle` + `linkedom` for extraction. Kokoro-82M via `mlx-audio` in a Python venv for
-speech. `ffmpeg` for encoding. Swift for the Mac wrapper. pnpm.
+speech, built by `bin/setup-python.sh` from `pyproject.toml`. `ffmpeg` for encoding. Swift for
+the Mac wrapper. pnpm 10 (`packageManager`).
 
 ## Commands
 
 ```bash
-pnpm test    # node --test on test/**/*.test.ts — this is the proof
-pnpm dev     # node --watch src/server.ts
-pnpm start   # what the LaunchAgent runs
-bin/kiku     # the CLI: a url, a file, quoted text, or nothing for the library
+pnpm test       # tsc --noEmit, then node --test on test/**/*.test.ts — this is the proof
+pnpm typecheck  # the typecheck alone
+pnpm dev        # node --watch src/server.ts
+pnpm start      # what the LaunchAgent runs
+bin/kiku        # the CLI: a url, a file, quoted text, or nothing for the library
 ```
 
-There is no typecheck script. `node --test` type-strips without checking types, so a type
-error is only caught by reading. Do not assume a green test run means the types are sound.
+`pnpm test` typechecks first, so a green run means the types are sound too. `node --test` run
+directly strips types without checking them; do not read its green as proof.
 
 ## Invariants
 

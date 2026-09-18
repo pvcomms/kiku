@@ -99,8 +99,8 @@ that must be acted on, and the friction is the feature. Playback from `<enclosur
 
 ## Known sharp edges
 
-No typecheck. `node --test` strips types without checking them, so type errors survive a green
-run.
+`node --test` run directly skips the typecheck; `pnpm test` runs `tsc --noEmit` first. A green
+run of the raw command proves less than it looks.
 
 `src/clean.ts` failures are audible, not visible. Text that looks correct can still read
 badly aloud. Listen.

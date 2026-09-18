@@ -6,9 +6,8 @@ kiku is close to generic already — the seam is mostly hostnames and one hardwa
 
 | Thing                                    | Where                           | Replace with                                    |
 | ---------------------------------------- | ------------------------------- | ----------------------------------------------- |
-| `mac-studio.local` throughout the README | docs only                       | your own machine's hostname                     |
-| `192.168.68.115`                         | README                          | your LAN address                                |
-| `tail497a8a.ts.net`                      | README                          | your own tailnet                                |
+| `<your-mac>.local` in the docs           | README, `shortcut/Kiku.plist`   | your machine's hostname; the server prints it   |
+| `<mac>.<your-tailnet>.ts.net`            | README                          | your own tailnet; `bin/kiku-remote` prints it   |
 | `~/Kiku` as the data directory           | `KIKU_HOME`                     | anywhere                                        |
 | Ports 4747 / 4748                        | `KIKU_PORT`, `KIKU_PUBLIC_PORT` | anything free                                   |
 | `com.param.kiku` LaunchAgent label       | `launchd/com.param.kiku.plist`  | your own reverse-DNS label                      |

@@ -48,7 +48,7 @@
       <dict>
         <key>UUID</key><string>6D058431-0E36-4897-80D7-6EC38B78A32A</string>
         <key>ShowHeaders</key><true/>
-        <key>WFURL</key><string>http://mac-studio.local:4747/api/jobs</string>
+        <key>WFURL</key><string>http://&lt;your-mac&gt;.local:4747/api/jobs</string>
         <key>WFHTTPMethod</key><string>POST</string>
         <key>WFHTTPBodyType</key><string>JSON</string>
         <key>WFJSONValues</key>

@@ -99,9 +99,6 @@ that must be acted on, and the friction is the feature. Playback from `<enclosur
 No typecheck. `node --test` strips types without checking them, so type errors survive a green
 run.
 
-`package.json` lacks `"type": "module"` while the code is ESM. Node infers it and warns.
-Adding the field changes how every file is parsed — not a drive-by fix.
-
 `src/clean.ts` failures are audible, not visible. Text that looks correct can still read
 badly aloud. Listen.
 

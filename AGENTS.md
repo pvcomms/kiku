@@ -10,10 +10,6 @@ imports must carry explicit `.ts` extensions. Hono + `@hono/node-server` for HTT
 `defuddle` + `linkedom` for extraction. Kokoro-82M via `mlx-audio` in a Python venv for
 speech. `ffmpeg` for encoding. Swift for the Mac wrapper. pnpm.
 
-`package.json` has no `"type": "module"` despite the code being ESM; Node infers it and warns
-on each test run. Harmless, and adding the field is a real change to how every file is parsed
-— do not add it as a drive-by.
-
 ## Commands
 
 ```bash

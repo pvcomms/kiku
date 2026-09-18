@@ -148,7 +148,7 @@ function parseItem(block: string): Episode | null {
   const description = decodeEntities(stripTags(descRaw)).trim();
 
   return {
-    id: hashId(guid || url),
+    id: hashId("ep", guid || url),
     title,
     pubDate,
     enclosureUrl: url,
@@ -159,7 +159,7 @@ function parseItem(block: string): Episode | null {
   };
 }
 
-function tag(s: string, name: string): string | undefined {
+export function tag(s: string, name: string): string | undefined {
   const re = new RegExp(`<${name}[^>]*>([\\s\\S]*?)<\\/${name}>`, "i");
   const m = re.exec(s);
   if (!m) return undefined;
@@ -173,7 +173,7 @@ function attrOf(s: string, tagRe: RegExp, attr: string): string | undefined {
   return m ? attrFrom(m[0], attr) : undefined;
 }
 
-function attrFrom(attrs: string, name: string): string | undefined {
+export function attrFrom(attrs: string, name: string): string | undefined {
   const re = new RegExp(
     `${name}\\s*=\\s*"([^"]*)"|${name}\\s*=\\s*'([^']*)'`,
     "i",
@@ -183,7 +183,7 @@ function attrFrom(attrs: string, name: string): string | undefined {
   return decodeEntities(m[1] ?? m[2] ?? "");
 }
 
-function stripTags(s: string): string {
+export function stripTags(s: string): string {
   return s
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
@@ -198,6 +198,10 @@ function parseDuration(s: string): number {
   return parts[0] || 0;
 }
 
-function hashId(s: string): string {
-  return "ep-" + crypto.createHash("sha1").update(s).digest("hex").slice(0, 16);
+export function hashId(prefix: string, s: string): string {
+  return (
+    prefix +
+    "-" +
+    crypto.createHash("sha1").update(s).digest("hex").slice(0, 16)
+  );
 }

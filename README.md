@@ -45,6 +45,14 @@ text ──────────────────────┘      
 - `src/tts.ts` + `bin/tts.py` — spawns the MLX driver, streams progress, encodes.
 - `src/ui.ts` — the page. Instrument Serif / General Sans / JetBrains Mono, self-hosted in `assets/fonts`.
 
+## Feeds & Inbox
+
+Subscribe to a blog, newsletter, or news feed (paste its RSS/Atom URL under **Feeds**) and Kiku checks it every 30 minutes. New posts wait in the **Inbox** — tap one to read it aloud through the same pipeline as a pasted link, or dismiss it. Subscribing starts a feed caught-up: only posts published after you add it show up, so you never get its whole archive dumped in at once.
+
+- `src/textfeeds.ts` — `TextFeeds` (subscriptions + inbox, `~/Kiku/textfeeds.json`) and a hand-rolled RSS 2.0 / Atom parser (`parseArticleFeed`).
+- Routes: `GET/POST /api/feeds`, `DELETE /api/feeds/:id`, `POST /api/feeds/import` (bulk, e.g. from an OPML/RSS Guard export), `POST /api/feeds/poll` (check now), `GET /api/inbox`, `POST /api/inbox/:id/listen`, `POST /api/inbox/:id/dismiss`.
+- This is for text feeds only — real podcasts (audio enclosures) stay in the **Podcasts** section above and play directly from the publisher's file.
+
 ## The Mac app
 
 `app/main.swift` is a 150-line WebKit window onto the page: native file picker, confirm dialogs, mp3 downloads handed to the browser, and a self-heal that kicks the launchd agent if the server is not answering. Rebuild and reinstall with `app/build.sh` (needs the Xcode Command Line Tools; ad-hoc signed, so it only runs on this Mac).
@@ -78,15 +86,15 @@ That runs `tailscale serve` and prints an `https://mac-studio.<tailnet>.ts.net/`
 ## Which player
 
 - **Kiku's own page** — free, yours, no account: open the tailnet address on any device, press play. Positions sync through the Studio.
-- **RSS Guard** (Studio, MacBook) — FOSS desktop reader with a built-in enclosure player; the feed is already in the Studio's copy under a *Kiku* folder. On another Mac add `http://mac-studio.tail497a8a.ts.net/feed.xml`.
+- **RSS Guard** (Studio, MacBook) — FOSS desktop reader with a built-in enclosure player; the feed is already in the Studio's copy under a _Kiku_ folder. On another Mac add `http://mac-studio.tail497a8a.ts.net/feed.xml`.
 - **Apple Podcasts** — not open source, but it fetches from the device, so the private feed stays private; syncs iPhone↔iPad.
 - **Pocket Casts** — the apps are open source (MPL-2.0) but the service crawls feeds from its cloud, so it needs the public secret link from `kiku-public`, and Automattic sees the titles.
 
 ## Shortcut (build once on the phone, two actions)
 
-Shortcuts can't be signed on this Mac (no iCloud), so make it by hand. Shortcuts app → + → name it **Kiku**, turn on *Show in Share Sheet*, then add:
+Shortcuts can't be signed on this Mac (no iCloud), so make it by hand. Shortcuts app → + → name it **Kiku**, turn on _Show in Share Sheet_, then add:
 
-1. **URL Encode** — input: *Shortcut Input*.
-2. **Open URLs** — `http://mac-studio.local:4747/?u=` followed by the *URL Encoded Text* variable.
+1. **URL Encode** — input: _Shortcut Input_.
+2. **Open URLs** — `http://mac-studio.local:4747/?u=` followed by the _URL Encoded Text_ variable.
 
-Sharing a page from Brave now opens Kiku with the link already submitted. Once you are on Tailscale, swap the host for the `ts.net` one so it works away from home too. The quieter variant (no browser tab) is three actions: *Get URLs from Input* → *Get Contents of URL* (POST, JSON body `{ "url": URLs, "text": Shortcut Input }` to `/api/jobs`) → *Show Notification*. `shortcut/Kiku.plist` is that variant as a plist, for reference.
+Sharing a page from Brave now opens Kiku with the link already submitted. Once you are on Tailscale, swap the host for the `ts.net` one so it works away from home too. The quieter variant (no browser tab) is three actions: _Get URLs from Input_ → _Get Contents of URL_ (POST, JSON body `{ "url": URLs, "text": Shortcut Input }` to `/api/jobs`) → _Show Notification_. `shortcut/Kiku.plist` is that variant as a plist, for reference.

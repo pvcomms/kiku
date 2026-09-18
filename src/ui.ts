@@ -168,6 +168,14 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
   .show-head .t { flex: 1; font-family: var(--display); font-size: 21px; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .episodes .item:first-child { border-top: none; }
 
+  .feed-row { display: flex; align-items: center; gap: 12px; padding: 14px 6px; margin: 0 -6px; border-top: 1px solid var(--line); border-radius: 8px; transition: background-color 160ms var(--ease); }
+  .feed-row:last-child { border-bottom: 1px solid var(--line); }
+  .feed-row:hover { background: var(--paper-2); }
+  .feed-row .body { flex: 1 1 auto; min-width: 0; }
+  .feed-row .t { display: block; font-family: var(--display); font-size: 21px; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .feed-row .m { font: 12px/1.4 var(--mono); color: var(--ink-2); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .feed-row .m.error { color: var(--accent); }
+
   .player { position: fixed; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--paper-2) 88%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-top: 1px solid var(--line); padding: 12px 20px calc(12px + env(safe-area-inset-bottom)); transform: translateY(110%); transition: transform 500ms var(--ease); }
   .player.on { transform: none; }
   .player .in { max-width: 620px; margin: 0 auto; }
@@ -214,6 +222,11 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
   </section>
 
   <section class="rise">
+    <h2>Inbox <small id="inboxCount"></small></h2>
+    <div id="inbox"><div class="empty">Nothing new. Subscribe to a feed below and new posts land here.</div></div>
+  </section>
+
+  <section class="rise">
     <h2>Library <small id="count"></small></h2>
     <div id="library"><div class="empty">Nothing yet. Paste something above.</div></div>
   </section>
@@ -229,6 +242,19 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
       <div class="err" id="subErr" role="status"></div>
     </form>
     <div id="shows"><div class="empty">No shows yet. Paste an RSS feed URL above.</div></div>
+  </section>
+
+  <section class="rise">
+    <h2>Feeds <small id="feedCount"></small></h2>
+    <form class="feedbox" id="feedSubscribeForm" autocomplete="off" style="margin-bottom:16px">
+      <p>Paste a blog, newsletter or news feed URL. New posts wait in the Inbox above — tap one to hear it.</p>
+      <div class="url">
+        <input class="text" type="url" id="feedUrlInput" placeholder="https://interconnects.ai/feed" required>
+        <button class="btn-2" type="submit">subscribe</button>
+      </div>
+      <div class="err" id="feedSubErr" role="status"></div>
+    </form>
+    <div id="feedsList"><div class="empty">No feeds yet. Paste a feed URL above.</div></div>
   </section>
 
   <section class="rise">
@@ -474,6 +500,82 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
     }
   });
 
+  // --- inbox (new articles from subscribed feeds, waiting to be read aloud) ---
+  function inboxHtml(it) {
+    return \`<div class="item" data-id="\${it.id}">
+      <button class="play listen" type="button" aria-label="Listen">
+        <svg viewBox="0 0 14 14"><path d="M3 1.5v11l9-5.5z" fill="currentColor"/></svg>
+      </button>
+      <div class="body">
+        <span class="t">\${esc(it.title)}</span>
+        <span class="m">\${esc(it.feedTitle)} · \${day(it.pubDate)}</span>
+      </div>
+      <div class="more">
+        <button class="icon dismiss" type="button" title="Dismiss"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+      </div>
+    </div>\`;
+  }
+  async function loadInbox() {
+    let items = [];
+    try { items = await (await fetch('/api/inbox')).json(); } catch {}
+    $('#inboxCount').textContent = items.length ? String(items.length) : '';
+    $('#inbox').innerHTML = items.length ? items.map(inboxHtml).join('') : '<div class="empty">Nothing new. Subscribe to a feed below and new posts land here.</div>';
+  }
+  $('#inbox').addEventListener('click', async (e) => {
+    const row = e.target.closest('.item'); if (!row) return;
+    const id = row.dataset.id;
+    if (e.target.closest('.dismiss')) {
+      await fetch('/api/inbox/' + id + '/dismiss', { method: 'POST' });
+      loadInbox();
+      return;
+    }
+    if (e.target.closest('.listen') || e.target.closest('.body')) {
+      await fetch('/api/inbox/' + id + '/listen', { method: 'POST' });
+      loadInbox();
+      poll(true);
+    }
+  });
+
+  // --- feeds (subscribe to a blog/newsletter; polled on the Studio every 30 min) ---
+  function feedRowHtml(f) {
+    const status = f.lastError ? 'error: ' + f.lastError : f.lastPolled ? 'checked ' + day(f.lastPolled) : 'not checked yet';
+    return \`<div class="feed-row" data-id="\${f.id}" data-title="\${esc(f.title)}">
+      <div class="body">
+        <span class="t">\${esc(f.title)}</span>
+        <span class="m\${f.lastError ? ' error' : ''}">\${esc(status)}</span>
+      </div>
+      <button class="icon unsub" type="button" title="Unsubscribe"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+    </div>\`;
+  }
+  async function loadFeeds() {
+    let feeds = [];
+    try { feeds = await (await fetch('/api/feeds')).json(); } catch {}
+    $('#feedCount').textContent = feeds.length ? feeds.length + (feeds.length === 1 ? ' feed' : ' feeds') : '';
+    $('#feedsList').innerHTML = feeds.length ? feeds.map(feedRowHtml).join('') : '<div class="empty">No feeds yet. Paste a feed URL above.</div>';
+  }
+  const feedSubForm = $('#feedSubscribeForm'), feedUrlInput = $('#feedUrlInput'), feedSubErr = $('#feedSubErr');
+  feedSubForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    feedSubErr.textContent = '';
+    const url = feedUrlInput.value.trim();
+    if (!url) return;
+    try {
+      const res = await fetch('/api/feeds', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ feedUrl: url }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not add that feed.');
+      feedUrlInput.value = '';
+      loadFeeds();
+    } catch (e) { feedSubErr.textContent = e.message; }
+  });
+  $('#feedsList').addEventListener('click', async (e) => {
+    const unsub = e.target.closest('.unsub'); if (!unsub) return;
+    const row = e.target.closest('.feed-row');
+    if (!confirm('Unsubscribe from "' + row.dataset.title + '"?')) return;
+    await fetch('/api/feeds/' + row.dataset.id, { method: 'DELETE' });
+    loadFeeds();
+  });
+  setInterval(loadInbox, 60000);
+
   // --- ?u= prefill (used by the Shortcut fallback) ---
   const params = new URLSearchParams(location.search);
   const pre = params.get('u') || params.get('url') || params.get('text');
@@ -481,6 +583,8 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
 
   loadLibrary();
   loadShows();
+  loadInbox();
+  loadFeeds();
   poll(false);
 })();
 </script>

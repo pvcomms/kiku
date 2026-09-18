@@ -35,6 +35,12 @@ import {
 import { Library, newId, type Item } from "./library.ts";
 import { buildFeed, formatDuration } from "./feed.ts";
 import { Podcasts, fetchXml, parseFeed, type Podcast } from "./podcasts.ts";
+import {
+  TextFeeds,
+  parseArticleFeed,
+  mapLimit,
+  type TextFeed,
+} from "./textfeeds.ts";
 import { page } from "./ui.ts";
 
 const PORT = Number(process.env.KIKU_PORT ?? 4747);
@@ -68,6 +74,7 @@ type Job = {
 const runFile = promisify(execFile);
 const lib = new Library(HOME);
 const podcasts = new Podcasts(HOME);
+const textFeeds = new TextFeeds(HOME);
 const jobs: Job[] = [];
 let pumping = false;
 
@@ -227,6 +234,50 @@ async function process1(job: Job) {
   job.progress = 1;
   job.detail = parts.length > 1 ? `${parts.length} parts ready` : "ready";
   touch(job);
+}
+
+// ---------- text feeds (subscribe to a blog/newsletter; new posts land in the inbox) ----------
+
+async function subscribeFeed(feedUrl: string): Promise<TextFeed> {
+  const already = textFeeds.findFeed(feedUrl);
+  if (already) return already;
+  const { title, siteUrl, articles } = parseArticleFeed(
+    await fetchXml(feedUrl),
+    40,
+  );
+  const feed: TextFeed = {
+    id: newId(),
+    title,
+    feedUrl,
+    siteUrl,
+    addedAt: new Date().toISOString(),
+    // A feed starts caught-up: only posts published after subscribing reach the inbox.
+    seen: articles.map((a) => a.guid),
+  };
+  await textFeeds.addFeed(feed);
+  return feed;
+}
+
+let pollingFeeds = false;
+async function pollTextFeeds(): Promise<void> {
+  if (pollingFeeds) return;
+  pollingFeeds = true;
+  try {
+    await mapLimit(textFeeds.listFeeds(), 6, async (feed) => {
+      try {
+        const { articles } = parseArticleFeed(await fetchXml(feed.feedUrl), 40);
+        await textFeeds.applyPoll(feed.id, articles);
+      } catch (e) {
+        await textFeeds.applyPoll(
+          feed.id,
+          [],
+          e instanceof Error ? e.message : String(e),
+        );
+      }
+    });
+  } finally {
+    pollingFeeds = false;
+  }
 }
 
 // ---------- network identity ----------
@@ -528,6 +579,82 @@ app.get("/api/podcasts/:id/episodes", async (c) => {
   }
 });
 
+// ---------- text feeds + inbox (subscribe to a blog; new posts wait to be read aloud) ----------
+
+app.post("/api/feeds", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as {
+    feedUrl?: unknown;
+  };
+  const feedUrl = typeof body.feedUrl === "string" ? body.feedUrl.trim() : "";
+  if (!/^https?:\/\//i.test(feedUrl))
+    return c.json({ error: "Give me a feed URL." }, 400);
+  try {
+    return c.json(await subscribeFeed(feedUrl), 201);
+  } catch (e) {
+    return c.json(
+      { error: e instanceof Error ? e.message : "Couldn't read that feed." },
+      400,
+    );
+  }
+});
+
+app.get("/api/feeds", (c) => c.json(textFeeds.listFeeds()));
+
+app.delete("/api/feeds/:id", async (c) => {
+  const ok = await textFeeds.removeFeed(c.req.param("id"));
+  return ok ? c.json({ ok: true }) : c.json({ error: "No such feed." }, 404);
+});
+
+app.post("/api/feeds/poll", async (c) => {
+  void pollTextFeeds();
+  return c.json({ ok: true });
+});
+
+// Bulk-subscribe, e.g. from an existing RSS Guard export. Skips URLs already subscribed.
+app.post("/api/feeds/import", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { feeds?: unknown };
+  const urls = (Array.isArray(body.feeds) ? body.feeds : [])
+    .map((f) =>
+      f && typeof f === "object" ? (f as { feedUrl?: unknown }).feedUrl : f,
+    )
+    .filter(
+      (u): u is string => typeof u === "string" && /^https?:\/\//i.test(u),
+    );
+  const results = await mapLimit(urls, 8, async (feedUrl) => {
+    if (textFeeds.findFeed(feedUrl))
+      return { feedUrl, status: "skipped" as const };
+    try {
+      const feed = await subscribeFeed(feedUrl);
+      return { feedUrl, status: "added" as const, title: feed.title };
+    } catch (e) {
+      return {
+        feedUrl,
+        status: "failed" as const,
+        error: e instanceof Error ? e.message : String(e),
+      };
+    }
+  });
+  return c.json({
+    added: results.filter((r) => r.status === "added").length,
+    skipped: results.filter((r) => r.status === "skipped").length,
+    failed: results.filter((r) => r.status === "failed"),
+  });
+});
+
+app.get("/api/inbox", (c) => c.json(textFeeds.listInbox()));
+
+app.post("/api/inbox/:id/listen", async (c) => {
+  const item = await textFeeds.removeFromInbox(c.req.param("id"));
+  if (!item) return c.json({ error: "No such item." }, 404);
+  const job = enqueue({ kind: "url", url: item.link }, DEFAULT_VOICE, 1);
+  return c.json(publicJob(job), 202);
+});
+
+app.post("/api/inbox/:id/dismiss", async (c) => {
+  const item = await textFeeds.removeFromInbox(c.req.param("id"));
+  return item ? c.json({ ok: true }) : c.json({ error: "No such item." }, 404);
+});
+
 const ASSET_TYPES: Record<string, string> = {
   ".woff2": "font/woff2",
   ".png": "image/png",
@@ -677,11 +804,14 @@ pub.notFound((c) => c.text("Not found", 404));
 
 await lib.init();
 await podcasts.init();
+await textFeeds.init();
 await loadPositions();
 await detectTailnet();
 TOKEN = await publicToken();
 serve({ fetch: pub.fetch, port: PUBLIC_PORT, hostname: "127.0.0.1" });
 setInterval(() => void detectTailnet(), 5 * 60 * 1000);
+void pollTextFeeds();
+setInterval(() => void pollTextFeeds(), 30 * 60 * 1000);
 serve({ fetch: app.fetch, port: PORT, hostname: "0.0.0.0" }, () => {
   console.log(
     `[kiku] listening on ${hostList().join("  ")}  (library: ${HOME})`,

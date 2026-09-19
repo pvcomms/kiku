@@ -67,3 +67,24 @@ directory is tracked. Personal network names left the docs for placeholders; the
 its own addresses. Screenshots come from a second instance seeded with synthetic entries, never
 from the library someone listens to. `CONTRIBUTING.md`, `SECURITY.md` and `CHANGELOG.md` say
 the rest.
+
+---
+
+**2026-09-20 — kiku travels on the laptop; the SSD is a copy, never a dependency.**
+The road machine is an M4 MacBook Pro. Everything a reading needs — Node, the MLX venv, the
+Kokoro weights, one Ollama model, ffmpeg, poppler — is installed on its internal disk by
+`bin/setup-road`, so a plane with no network and no SSD still reads. `bin/mirror-ssd` puts a
+copy of all of it on `/Volumes/Go` so a wiped or borrowed Mac can be brought up offline; kiku
+never looks for that volume. Hosting on Vercel was considered and is not possible rather than
+merely unwanted: the speech step is MLX on Apple silicon and the analysis step is a local
+model, neither of which exists in a serverless function.
+
+---
+
+**2026-09-20 — Proton Drive is an archive, not a sync channel.**
+Finished readings are copied into the Proton Drive app's sync folder and nothing is ever read
+back. Each machine keeps its own `library.json`; two machines exporting into the same folder
+cannot collide because every file name starts with an id that is time plus randomness. A
+two-way sync of the library would mean merging JSON written by two machines, which is the
+kind of thing that silently loses readings. The copy is a separate step after the reading is
+done, so a missing folder can never fail a reading.

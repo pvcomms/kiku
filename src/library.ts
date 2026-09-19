@@ -16,6 +16,7 @@ export type Item = {
   voice: string;
   speed: number;
   createdAt: string; // ISO
+  exportedAt?: string; // ISO; when a copy was confirmed in the Proton Drive folder
 };
 
 export class Library {

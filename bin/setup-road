@@ -1,0 +1,71 @@
+#!/bin/zsh
+# setup-road — bring a Mac up as a kiku stand, from a bare clone to a green bin/doctor.
+# Safe to run again: every step checks before it acts. Needs the network once, for Homebrew,
+# the Python wheels, the Kokoro weights and the model; after that the machine reads offline.
+#   bin/setup-road            do everything
+#   bin/setup-road --no-app   skip building Kiku.app (no Xcode command line tools)
+set -eu
+cd "$(dirname "$0")/.."
+REPO=$(pwd)
+MODEL="${KIKU_MODEL:-qwen2.5:7b}"
+DOMAIN="gui/$(id -u)"
+
+say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
+
+[ "$(uname -m)" = "arm64" ] || { echo "setup-road: kiku speaks through MLX, which needs Apple silicon" >&2; exit 1; }
+command -v brew >/dev/null 2>&1 || { echo "setup-road: install Homebrew first: https://brew.sh" >&2; exit 1; }
+
+say "1  Homebrew formulae"
+for f in node pnpm uv ffmpeg poppler markitdown ollama; do
+  if brew list --formula --versions "$f" >/dev/null 2>&1; then echo "   have $f"; else echo "   installing $f"; brew install "$f"; fi
+done
+
+say "2  Node dependencies"
+pnpm install --frozen-lockfile
+
+say "3  Speech environment"
+bin/setup-python.sh
+
+say "4  Ollama"
+mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+AGENT="$HOME/Library/LaunchAgents/com.param.ollama.plist"
+if [ -f "$AGENT" ]; then
+  echo "   keeping the existing com.param.ollama agent"
+else
+  sed -e "s|__HOME__|$HOME|g" -e "s|__OLLAMA__|$(command -v ollama)|g" launchd/com.param.ollama.plist.template > "$AGENT"
+  plutil -lint "$AGENT" >/dev/null
+  launchctl bootstrap "$DOMAIN" "$AGENT" 2>/dev/null || launchctl kickstart -k "$DOMAIN/com.param.ollama"
+  echo "   installed $AGENT"
+fi
+for i in $(seq 1 40); do curl -sf http://127.0.0.1:11434/api/tags >/dev/null 2>&1 && break; sleep 0.5; done
+curl -sf http://127.0.0.1:11434/api/tags >/dev/null 2>&1 || { echo "setup-road: ollama did not come up; see ~/Library/Logs/ollama.log" >&2; exit 1; }
+if ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$MODEL"; then
+  echo "   have $MODEL"
+else
+  echo "   pulling $MODEL"
+  ollama pull "$MODEL"
+fi
+
+say "5  Kokoro weights"
+SNAP="${HF_HUB_CACHE:-${HF_HOME:-$HOME/.cache/huggingface}/hub}/models--mlx-community--Kokoro-82M-bf16/snapshots"
+if ls "$SNAP"/*/*.safetensors >/dev/null 2>&1; then
+  echo "   cached"
+else
+  echo "   first reading, to download them"
+  T=$(mktemp -d /tmp/kiku-warm.XXXXXX)
+  printf 'The voice is ready.\n' > "$T/in.txt"
+  HF_HUB_OFFLINE=0 .venv/bin/python bin/tts.py --in "$T/in.txt" --out "$T/out.wav" --voice af_heart --speed 1 --lang a >/dev/null
+  ls "$SNAP"/*/*.safetensors >/dev/null 2>&1 || { echo "setup-road: the weights did not land in $SNAP" >&2; exit 1; }
+  echo "   cached"
+fi
+
+say "6  Server"
+bin/install-launchd
+
+if [ "${1:-}" != "--no-app" ]; then
+  say "7  Kiku.app"
+  if command -v swiftc >/dev/null 2>&1; then app/build.sh; else echo "   no swiftc; skipping (xcode-select --install, then app/build.sh)"; fi
+fi
+
+say "8  Doctor"
+exec bin/doctor

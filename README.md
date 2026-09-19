@@ -2,7 +2,7 @@
 
 Paste a link, a file, or the words themselves. Your Mac reads it aloud with Kokoro and hands the audio to your phone as a private podcast episode — or, if you ask to _see_ it instead, a local model reads it into three or five overlapping sets and draws them as one interactive page you can open anywhere. Either lands in your Proton Drive. Nothing leaves the machine: no API keys, no cloud voices, no cloud models, no font requests, no analytics. It runs at home and on a laptop with no network.
 
-![The kiku page: a compose box for a link, a file or pasted text with a voice and speed picker, an empty Inbox, and a Library listing two readings with play buttons](docs/img/kiku.png)
+![The kiku page: a compose box for a link, a file or pasted text with a listen / see choice and a voice and speed picker, an empty Inbox, and a Library listing two readings with play buttons and one drawing that opens as a page](docs/img/kiku.png)
 
 ## What it reads and writes
 

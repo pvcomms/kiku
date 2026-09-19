@@ -3,6 +3,7 @@ import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { kokoroSnapshot } from "./preflight.ts";
 
 const run = promisify(execFile);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -53,7 +54,10 @@ export function speak(
         env: {
           ...process.env,
           PYTHONUNBUFFERED: "1",
-          HF_HUB_OFFLINE: process.env.HF_HUB_OFFLINE ?? "0",
+          // Once the weights are cached there is nothing left to fetch, so tell the hub not to
+          // try. On a plane the alternative is mlx-audio hanging on a lookup it cannot make.
+          HF_HUB_OFFLINE:
+            process.env.HF_HUB_OFFLINE ?? (kokoroSnapshot() ? "1" : "0"),
         },
       },
     );

@@ -33,6 +33,22 @@ import {
   VOICES,
 } from "./tts.ts";
 import { Library, newId, type Item } from "./library.ts";
+import {
+  JobsStore,
+  label,
+  toStored,
+  type Input,
+  type Job,
+  type Mode,
+} from "./jobs.ts";
+import { check, freeBytes, FREE_FLOOR_BYTES } from "./preflight.ts";
+import {
+  AUDIO_DIR,
+  reconcile,
+  resolveExportDir,
+  type Pair,
+  type Sweep,
+} from "./export.ts";
 import { buildFeed, formatDuration } from "./feed.ts";
 import { Podcasts, fetchXml, parseFeed, type Podcast } from "./podcasts.ts";
 import {
@@ -50,59 +66,37 @@ const COVER = path.join(ROOT, "assets", "cover.png");
 const PUBLIC_PORT = Number(process.env.KIKU_PUBLIC_PORT ?? 4748);
 const TOKEN_FILE = path.join(HOME, "public-token");
 
-type Input =
-  | { kind: "url"; url: string }
-  | { kind: "text"; text: string; title?: string }
-  | { kind: "file"; name: string; buf: Buffer };
-
-type Job = {
-  id: string;
-  status: "queued" | "extracting" | "reading" | "encoding" | "done" | "error";
-  title: string;
-  detail: string;
-  progress: number;
-  seconds: number;
-  error?: string;
-  itemIds: string[];
-  createdAt: string;
-  updatedAt: string;
-  voice: string;
-  speed: number;
-  input: Input;
-};
-
 const runFile = promisify(execFile);
 const lib = new Library(HOME);
 const podcasts = new Podcasts(HOME);
 const textFeeds = new TextFeeds(HOME);
+const jobsStore = new JobsStore(HOME);
+// Live jobs carry their input (a file job holds the bytes). Jobs restored from disk are
+// already reduced to their stored shape; they are kept apart so the two cannot be confused.
 const jobs: Job[] = [];
+let restored: ReturnType<typeof toStored>[] = [];
 let pumping = false;
 
 function publicJob(j: Job) {
-  const { input, ...rest } = j;
-  const label =
-    input.kind === "url"
-      ? input.url
-      : input.kind === "file"
-        ? input.name
-        : "pasted text";
-  return { ...rest, input: label };
+  return toStored(j);
+}
+
+function allJobs() {
+  return [...jobs.map(publicJob), ...restored].slice(0, 100);
 }
 
 function touch(j: Job) {
   j.updatedAt = new Date().toISOString();
+  jobsStore.saveSoon(allJobs());
 }
 
-function enqueue(input: Input, voice: string, speed: number): Job {
+function enqueue(input: Input, voice: string, speed: number, mode: Mode): Job {
   const job: Job = {
     id: newId(),
     status: "queued",
+    mode,
     title:
-      input.kind === "url"
-        ? input.url
-        : input.kind === "file"
-          ? input.name
-          : (input.title ?? "Pasted text"),
+      input.kind === "text" ? (input.title ?? "Pasted text") : label(input),
     detail: "waiting",
     progress: 0,
     seconds: 0,
@@ -115,6 +109,7 @@ function enqueue(input: Input, voice: string, speed: number): Job {
   };
   jobs.unshift(job);
   while (jobs.length > 100) jobs.pop();
+  touch(job);
   void pump();
   return job;
 }
@@ -226,6 +221,7 @@ async function process1(job: Job) {
     };
     await lib.add(item);
     job.itemIds.push(id);
+    void exportItems([item]);
     console.log(
       `[kiku] ready: ${item.title} (${formatDuration(item.seconds)})`,
     );
@@ -234,6 +230,40 @@ async function process1(job: Job) {
   job.progress = 1;
   job.detail = parts.length > 1 ? `${parts.length} parts ready` : "ready";
   touch(job);
+}
+
+// ---------- Proton Drive copies (an archive the phone can reach; never read back) ----------
+
+function exportPairs(dir: string, items: Item[]): Pair[] {
+  return items.map((it) => ({
+    id: it.id,
+    src: path.join(lib.audioDir, it.file),
+    dest: path.join(dir, AUDIO_DIR, it.file),
+  }));
+}
+
+let exporting = false;
+/**
+ * Copy what is not yet there. Resolves the folder every time, so signing into Proton Drive
+ * after kiku started is enough. Never throws: a reading is done when it is in ~/Kiku.
+ */
+async function exportItems(items: Item[]): Promise<Sweep | null> {
+  const dir = resolveExportDir();
+  if (!dir || exporting) return null;
+  exporting = true;
+  try {
+    const sweep = await reconcile(exportPairs(dir, items), (l) =>
+      console.log(`[kiku] ${l}`),
+    );
+    const now = new Date().toISOString();
+    for (const id of [...sweep.copied, ...sweep.present]) {
+      const it = lib.get(id);
+      if (it && !it.exportedAt) await lib.add({ ...it, exportedAt: now });
+    }
+    return sweep;
+  } finally {
+    exporting = false;
+  }
 }
 
 // ---------- text feeds (subscribe to a blog/newsletter; new posts land in the inbox) ----------
@@ -390,19 +420,43 @@ app.get("/", (c) =>
   ),
 );
 
-app.get("/health", (c) =>
-  c.json({
-    ok: true,
+// The full readiness report, not a heartbeat. The page reads it to show what is missing;
+// bin/doctor reads it the same way with the slow checks turned on.
+app.get("/health", async (c) => {
+  const report = await check({ deep: c.req.query("deep") === "1", home: HOME });
+  return c.json({
+    ...report,
     items: lib.list().length,
     active: jobs.filter((j) => !["done", "error"].includes(j.status)).length,
-  }),
-);
+    exportDir: resolveExportDir(),
+  });
+});
+
+app.post("/api/export/reconcile", async (c) => {
+  if (!resolveExportDir())
+    return c.json({ error: "No Proton Drive folder on this machine." }, 409);
+  const sweep = await exportItems(lib.list());
+  if (!sweep) return c.json({ error: "A sweep is already running." }, 409);
+  return c.json(sweep);
+});
+
+function asMode(raw: unknown): Mode {
+  return raw === "see" ? "see" : "listen";
+}
+
+/** A long reading writes a few hundred MB before it is done. Refuse to begin one on a full disk. */
+async function roomToWork(): Promise<string | null> {
+  const free = await freeBytes(HOME).catch(() => null);
+  if (free === null || free >= FREE_FLOOR_BYTES) return null;
+  return `Only ${(free / 1e9).toFixed(1)}GB free on ${HOME}; kiku needs ${FREE_FLOOR_BYTES / 1e9}GB to start a reading.`;
+}
 
 app.post("/api/jobs", async (c) => {
   const ct = c.req.header("content-type") ?? "";
   const inputs: Input[] = [];
   let voice = DEFAULT_VOICE;
   let speed = 1;
+  let mode: Mode = "listen";
   let title: string | undefined;
 
   const takeText = (raw: unknown) => {
@@ -427,6 +481,7 @@ app.post("/api/jobs", async (c) => {
     if (typeof body.voice === "string") voice = body.voice;
     if (body.speed !== undefined) speed = Number(body.speed);
     if (typeof body.title === "string") title = body.title;
+    mode = asMode(body.mode);
     takeText(firstText(body.url, body.input, body.text));
   } else if (
     ct.includes("multipart/form-data") ||
@@ -437,6 +492,7 @@ app.post("/api/jobs", async (c) => {
     if (typeof body.speed === "string" && body.speed)
       speed = Number(body.speed);
     if (typeof body.title === "string" && body.title) title = body.title;
+    mode = asMode(body.mode);
     const files = ([] as unknown[]).concat(body.file ?? []);
     for (const f of files) {
       if (f instanceof File && f.size > 0)
@@ -455,8 +511,10 @@ app.post("/api/jobs", async (c) => {
   if (!Number.isFinite(speed) || speed < 0.7 || speed > 1.6) speed = 1;
   if (inputs.length === 0)
     return c.json({ error: "Give me a link, a file, or some text." }, 400);
+  const full = await roomToWork();
+  if (full) return c.json({ error: full }, 507);
 
-  const created = inputs.map((inp) => enqueue(inp, voice, speed));
+  const created = inputs.map((inp) => enqueue(inp, voice, speed, mode));
   return c.json(
     {
       id: created[0].id,
@@ -467,11 +525,38 @@ app.post("/api/jobs", async (c) => {
   );
 });
 
-app.get("/api/jobs", (c) => c.json(jobs.slice(0, 30).map(publicJob)));
+app.get("/api/jobs", (c) => c.json(allJobs().slice(0, 30)));
 
 app.get("/api/jobs/:id", (c) => {
-  const j = jobs.find((x) => x.id === c.req.param("id"));
-  return j ? c.json(publicJob(j)) : c.json({ error: "No such job." }, 404);
+  const j = allJobs().find((x) => x.id === c.req.param("id"));
+  return j ? c.json(j) : c.json({ error: "No such job." }, 404);
+});
+
+// A job that was interrupted keeps what it needs to be tried once more. A file job cannot
+// be: its bytes were never written to disk, so it says so instead of pretending.
+app.post("/api/jobs/:id/again", async (c) => {
+  const j = allJobs().find((x) => x.id === c.req.param("id"));
+  if (!j) return c.json({ error: "No such job." }, 404);
+  if (!j.again)
+    return c.json(
+      { error: "That one was a file. Submit the file again." },
+      400,
+    );
+  const full = await roomToWork();
+  if (full) return c.json({ error: full }, 507);
+  restored = restored.filter((x) => x.id !== j.id);
+  const job = enqueue(j.again, j.voice, j.speed, j.mode);
+  return c.json(publicJob(job), 202);
+});
+
+// Only a job restored from disk can be dismissed; a live one is either running or will fade.
+app.delete("/api/jobs/:id", async (c) => {
+  const id = c.req.param("id");
+  const before = restored.length;
+  restored = restored.filter((x) => x.id !== id);
+  if (restored.length === before) return c.json({ error: "No such job." }, 404);
+  await jobsStore.write(allJobs());
+  return c.json({ ok: true });
 });
 
 // ---------- playback positions (so the phone, the iPad and the Mac resume the same spot) ----------
@@ -646,7 +731,12 @@ app.get("/api/inbox", (c) => c.json(textFeeds.listInbox()));
 app.post("/api/inbox/:id/listen", async (c) => {
   const item = await textFeeds.removeFromInbox(c.req.param("id"));
   if (!item) return c.json({ error: "No such item." }, 404);
-  const job = enqueue({ kind: "url", url: item.link }, DEFAULT_VOICE, 1);
+  const job = enqueue(
+    { kind: "url", url: item.link },
+    DEFAULT_VOICE,
+    1,
+    "listen",
+  );
   return c.json(publicJob(job), 202);
 });
 
@@ -805,6 +895,12 @@ pub.notFound((c) => c.text("Not found", 404));
 await lib.init();
 await podcasts.init();
 await textFeeds.init();
+restored = await jobsStore.load();
+void exportItems(lib.list());
+setInterval(() => void exportItems(lib.list()), 15 * 60 * 1000);
+for (const j of restored)
+  if (j.detail === "interrupted")
+    console.log(`[kiku] interrupted before restart: ${j.title}`);
 await loadPositions();
 await detectTailnet();
 TOKEN = await publicToken();

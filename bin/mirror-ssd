@@ -1,0 +1,74 @@
+#!/bin/zsh
+# mirror-ssd — copy everything a fresh Mac would need to run kiku offline onto the SSD.
+# One way, this machine → the volume. Nothing on the volume is ever deleted: a reading removed
+# here stays there, which is what a backup is for. The volume is a spare, never a dependency;
+# kiku does not look for it.
+#   bin/mirror-ssd                  to /Volumes/Go/kiku-road
+#   KIKU_SSD=/Volumes/other bin/mirror-ssd
+set -eu
+cd "$(dirname "$0")/.."
+REPO=$(pwd)
+VOL="${KIKU_SSD:-/Volumes/Go}"
+DEST="$VOL/kiku-road"
+MODEL="${KIKU_MODEL:-qwen2.5:7b}"
+KIKU="${KIKU_HOME:-$HOME/Kiku}"
+HF="${HF_HUB_CACHE:-${HF_HOME:-$HOME/.cache/huggingface}/hub}"
+OLLAMA="${OLLAMA_MODELS:-$HOME/.ollama/models}"
+
+# A mounted volume sits on a different device than /Volumes itself; a bare directory does not.
+[ -d "$VOL" ] && [ "$(stat -f %d "$VOL")" != "$(stat -f %d /Volumes)" ] || { echo "mirror-ssd: $VOL is not mounted" >&2; exit 1; }
+mkdir -p "$DEST"
+
+put() { # put <source-dir> <dest-dir>
+  [ -d "$1" ] || { echo "   skip $1 (not here)"; return 0; }
+  mkdir -p "$2"
+  rsync -a --exclude .DS_Store "$1/" "$2/"
+  echo "   $1 → $2"
+}
+
+echo "library"
+put "$KIKU" "$DEST/Kiku"
+
+echo "kokoro weights"
+put "$HF/models--mlx-community--Kokoro-82M-bf16" "$DEST/huggingface/hub/models--mlx-community--Kokoro-82M-bf16"
+
+echo "model $MODEL"
+# One model, not the whole store: a Studio can hold a hundred gigabytes of models that the road
+# machine cannot run. The manifest names the blobs; copy the manifest and exactly those.
+NAME="${MODEL%%:*}"; TAG="${MODEL#*:}"; [ "$TAG" = "$MODEL" ] && TAG=latest
+MANIFEST="$OLLAMA/manifests/registry.ollama.ai/library/$NAME/$TAG"
+if [ -f "$MANIFEST" ]; then
+  mkdir -p "$DEST/ollama/models/manifests/registry.ollama.ai/library/$NAME" "$DEST/ollama/models/blobs"
+  cp "$MANIFEST" "$DEST/ollama/models/manifests/registry.ollama.ai/library/$NAME/$TAG"
+  for d in $(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));for(const l of [m.config,...m.layers])console.log(l.digest.replace(":","-"))' "$MANIFEST"); do
+    [ -f "$DEST/ollama/models/blobs/$d" ] || cp "$OLLAMA/blobs/$d" "$DEST/ollama/models/blobs/$d"
+  done
+  echo "   $MODEL → $DEST/ollama/models"
+else
+  echo "   skip: $MODEL is not installed here (ollama pull $MODEL)"
+fi
+
+echo "python runtime"
+# .venv/bin/python is a symlink into uv's managed interpreter; the venv is useless without it.
+PYHOME=$(sed -n 's/^home = //p' .venv/pyvenv.cfg 2>/dev/null || true)
+if [ -n "$PYHOME" ]; then
+  PYDIR=$(dirname "$PYHOME")
+  put "$PYDIR" "$DEST/uv-python/$(basename "$PYDIR")"
+else
+  echo "   skip: no .venv here (bin/setup-python.sh)"
+fi
+
+echo "repo"
+put "$REPO" "$DEST/repo"
+
+cat > "$DEST/MANIFEST.txt" <<EOF
+mirrored $(date -u +%Y-%m-%dT%H:%M:%SZ) from $(hostname -s)
+user     $USER
+home     $HOME
+repo     $REPO
+kiku     $KIKU
+model    $MODEL
+python   ${PYHOME:-none}
+EOF
+echo
+echo "mirrored to $DEST ($(du -sh "$DEST" | cut -f1)). Restore with: $DEST/repo/bin/restore-from-ssd"

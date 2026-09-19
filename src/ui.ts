@@ -129,6 +129,17 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
   .bar b { display: block; height: 100%; width: 100%; background: var(--accent); transform-origin: left; transform: scaleX(0); transition: transform 700ms var(--ease); }
   .job.error .t { color: var(--accent); }
   .job.error .m { color: var(--accent); }
+  .job .m .acts { display: inline-flex; gap: 6px; flex: none; }
+  .job .m button { font: 12px/1 var(--mono); color: var(--ink); background: var(--paper-2); border: 1px solid var(--line); border-radius: 4px; padding: 5px 9px; cursor: pointer; transition: transform 160ms var(--ease), background-color 160ms var(--ease), border-color 160ms var(--ease); }
+  .job .m button:hover { background: var(--paper-3); border-color: var(--ink-3); }
+  .job .m button:active { transform: scale(0.98); }
+
+  .ready { margin: -12px 0 28px; padding: 12px 14px; border: 1px solid var(--accent); border-radius: 8px; font: 12px/1.7 var(--mono); color: var(--accent); }
+  .ready.soft { border-color: var(--line); }
+  .ready .soft { color: var(--ink-2); }
+  .ready div + div { margin-top: 6px; }
+  .ready code { display: block; color: var(--ink); user-select: all; white-space: pre-wrap; word-break: break-word; }
+  .item .pd { color: var(--ink-3); }
 
   .item { display: grid; grid-template-columns: 40px 1fr auto; gap: 14px; align-items: center; padding: 14px 6px; margin: 0 -6px; border-top: 1px solid var(--line); border-radius: 8px; transition: background-color 160ms var(--ease); }
   .item:last-child { border-bottom: 1px solid var(--line); }
@@ -196,6 +207,7 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
     <span class="status" id="status"><i></i><span id="statusText">studio</span></span>
   </header>
   <p class="lede rise">Paste a link, a file, or the words themselves. The Studio reads it aloud and hands it to your phone.</p>
+  <div class="ready rise" id="ready" hidden role="status"></div>
 
   <form class="compose rise" id="compose" autocomplete="off">
     <textarea id="input" name="input" placeholder="https://aeon.co/essays/… or the text itself" spellcheck="false" aria-label="Link or text"></textarea>
@@ -288,6 +300,7 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
 (() => {
   const HOSTS = ${hostsJson};
   const $ = (s) => document.querySelector(s);
+  const $$ = (s) => Array.from(document.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fmt = (sec) => { sec = Math.round(sec || 0); const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60; return h ? h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0') : m + ':' + String(s).padStart(2, '0'); };
   const day = (iso) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
@@ -339,15 +352,29 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
     let jobs = [];
     try { jobs = await (await fetch('/api/jobs')).json(); } catch { jobs = []; }
     const active = jobs.filter((j) => !['done', 'error'].includes(j.status));
-    const recent = jobs.filter((j) => j.status === 'error' && Date.now() - new Date(j.updatedAt) < 10 * 60 * 1000);
+    // An interrupted job stays until it is tried again or dismissed; other errors fade after ten minutes.
+    const recent = jobs.filter((j) => j.status === 'error' && (j.detail === 'interrupted' || Date.now() - new Date(j.updatedAt) < 10 * 60 * 1000));
     const show = [...active, ...recent];
     $('#cooking').hidden = show.length === 0;
     $('#jobs').innerHTML = show.map((j) => \`
-      <div class="job \${j.status}">
+      <div class="job \${j.status}" data-id="\${esc(j.id)}">
         <span class="t">\${esc(j.title)}</span>
-        <div class="m"><span>\${esc(j.status === 'error' ? j.error : j.detail)}</span><span>\${esc(j.status)}</span></div>
+        <div class="m"><span>\${esc(j.status === 'error' ? j.error : j.detail)}</span>\${j.detail === 'interrupted'
+          ? '<span class="acts">' + (j.again ? '<button type="button" data-again>again</button>' : '') + '<button type="button" data-dismiss>dismiss</button></span>'
+          : '<span>' + esc(j.status) + '</span>'}</div>
         \${j.status === 'error' ? '' : '<div class="bar"><b style="transform:scaleX(' + Math.max(0.02, j.progress || 0) + ')"></b></div>'}
       </div>\`).join('');
+    $$('#jobs [data-again]').forEach((b) => b.addEventListener('click', async () => {
+      b.disabled = true;
+      const id = b.closest('.job').dataset.id;
+      const res = await fetch('/api/jobs/' + id + '/again', { method: 'POST' });
+      if (!res.ok) { err.textContent = (await res.json()).error || 'Could not start it again.'; b.disabled = false; return; }
+      poll(true);
+    }));
+    $$('#jobs [data-dismiss]').forEach((b) => b.addEventListener('click', async () => {
+      await fetch('/api/jobs/' + b.closest('.job').dataset.id, { method: 'DELETE' });
+      poll(true);
+    }));
     $('#status i').className = active.length ? 'busy' : '';
     $('#statusText').textContent = active.length ? 'reading' : 'studio';
     const doneNow = jobs.some((j) => j.status === 'done' && Date.now() - new Date(j.updatedAt) < 4000);
@@ -386,7 +413,7 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
         </button>
         <div class="body">
           <span class="t">\${esc(it.title)}</span>
-          <span class="m">\${by ? esc(by) + ' · ' : ''}\${fmt(it.seconds)} · \${day(it.createdAt)}\${done ? ' · <span class="done">finished</span>' : pos > 30 ? ' · at ' + fmt(pos) : ''}</span>
+          <span class="m">\${by ? esc(by) + ' · ' : ''}\${fmt(it.seconds)} · \${day(it.createdAt)}\${done ? ' · <span class="done">finished</span>' : pos > 30 ? ' · at ' + fmt(pos) : ''}\${it.exportedAt ? ' · <span class="pd" title="A copy is in Proton Drive">proton</span>' : ''}</span>
         </div>
         <div class="more">
           <a class="icon" href="/audio/\${encodeURIComponent(it.file)}" download title="Download mp3"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 2v9M4.5 7.5 8 11l3.5-3.5M3 13.5h10"/></svg></a>
@@ -580,6 +607,20 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
   const params = new URLSearchParams(location.search);
   const pre = params.get('u') || params.get('url') || params.get('text');
   if (pre) { input.value = pre; history.replaceState(null, '', location.pathname); form.requestSubmit(); }
+
+  // --- readiness (one line, only when something this machine needs is missing) ---
+  async function checkReady() {
+    let report = null;
+    try { report = await (await fetch('/health')).json(); } catch { return; }
+    const bad = (report.checks || []).filter((c) => !c.ok);
+    const box = $('#ready');
+    box.hidden = bad.length === 0;
+    // Something a reading needs is in the accent; something only one half uses stays quiet.
+    box.classList.toggle('soft', bad.every((c) => c.level === 'want'));
+    box.innerHTML = bad.map((c) => '<div' + (c.level === 'want' ? ' class="soft"' : '') + '>' + esc(c.name) + ' — ' + esc(c.detail) + (c.fix ? '<code>' + esc(c.fix) + '</code>' : '') + '</div>').join('');
+  }
+  checkReady();
+  setInterval(checkReady, 60000);
 
   loadLibrary();
   loadShows();

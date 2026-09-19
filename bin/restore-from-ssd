@@ -1,0 +1,36 @@
+#!/bin/zsh
+# restore-from-ssd — bring a wiped or borrowed Mac up from the mirror, without the network.
+# Copies into place; never deletes what is already there. Then says what to run next.
+#   bin/restore-from-ssd            from /Volumes/Go/kiku-road
+#   KIKU_SSD=/Volumes/other bin/restore-from-ssd
+set -eu
+VOL="${KIKU_SSD:-/Volumes/Go}"
+SRC="$VOL/kiku-road"
+[ -f "$SRC/MANIFEST.txt" ] || { echo "restore-from-ssd: no mirror at $SRC" >&2; exit 1; }
+cat "$SRC/MANIFEST.txt"; echo
+
+MHOME=$(sed -n 's/^home  *//p' "$SRC/MANIFEST.txt")
+MREPO=$(sed -n 's/^repo  *//p' "$SRC/MANIFEST.txt")
+REPO="${KIKU_REPO:-$HOME/Code/kiku}"
+
+get() { # get <src-dir> <dest-dir>
+  [ -d "$1" ] || { echo "   skip $(basename "$1") (not in the mirror)"; return 0; }
+  mkdir -p "$2"
+  rsync -a --exclude .DS_Store "$1/" "$2/"
+  echo "   $2"
+}
+
+echo "repo";            get "$SRC/repo" "$REPO"
+echo "library";         get "$SRC/Kiku" "${KIKU_HOME:-$HOME/Kiku}"
+echo "kokoro weights";  get "$SRC/huggingface/hub" "${HF_HUB_CACHE:-${HF_HOME:-$HOME/.cache/huggingface}/hub}"
+echo "model";           get "$SRC/ollama/models" "${OLLAMA_MODELS:-$HOME/.ollama/models}"
+echo "python runtime"
+for d in "$SRC"/uv-python/*(N); do get "$d" "$HOME/.local/share/uv/python/$(basename "$d")"; done
+
+echo
+if [ "$MHOME" != "$HOME" ] || [ "$MREPO" != "$REPO" ]; then
+  echo "note: the mirror came from $MREPO under $MHOME; this is $REPO under $HOME."
+  echo "      .venv carries absolute paths, so rebuild it: cd $REPO && bin/setup-python.sh  (needs the network once)"
+fi
+echo "next: cd $REPO && bin/install-launchd && bin/doctor"
+echo "      Ollama itself is a Homebrew formula (brew install ollama); the model is already in place."

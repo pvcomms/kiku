@@ -28,6 +28,7 @@ export type Job = {
   id: string;
   status: JobStatus;
   mode: Mode;
+  sets?: 3 | 5; // for `see`: how many sets to draw; three unless asked
   title: string;
   detail: string;
   progress: number;

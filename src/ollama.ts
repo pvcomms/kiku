@@ -94,3 +94,47 @@ export function chooseModel(
 export function gb(bytes: number): string {
   return `${(bytes / 1e9).toFixed(1)}GB`;
 }
+
+export type Message = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
+
+/**
+ * One turn with the model, answered as JSON that fits `schema` — Ollama constrains the
+ * sampling to it, so the shape is guaranteed and only the content can be wrong. The model is
+ * released as soon as it answers (`keep_alive: 0`): on a 16GB laptop the speech step needs
+ * that memory next, and the pump runs the two strictly one after the other.
+ */
+export async function chatJson(
+  model: string,
+  messages: Message[],
+  schema: object,
+  timeoutMs = 10 * 60_000,
+): Promise<{ raw: string; parsed: unknown }> {
+  const res = await fetch(`${HOST}/api/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      model,
+      messages,
+      format: schema,
+      stream: false,
+      keep_alive: 0,
+      options: { temperature: 0.2 },
+    }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok)
+    throw new Error(
+      `ollama answered ${res.status}: ${(await res.text()).slice(0, 200)}`,
+    );
+  const body = (await res.json()) as { message?: { content?: unknown } };
+  const raw =
+    typeof body.message?.content === "string" ? body.message.content : "";
+  try {
+    return { raw, parsed: JSON.parse(raw) };
+  } catch {
+    throw new Error(`${model} did not answer with JSON: ${raw.slice(0, 120)}`);
+  }
+}

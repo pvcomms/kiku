@@ -105,6 +105,13 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
   select { border: 1px solid var(--line); background: var(--paper); color: var(--ink); padding: 0 32px 0 12px; appearance: none; -webkit-appearance: none;
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%236B665E' stroke-width='1.5'/></svg>"); background-repeat: no-repeat; background-position: right 12px center; max-width: 100%; }
   select.speed { width: 84px; }
+  select.sets { width: 96px; }
+  .seg { display: inline-flex; height: 44px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--paper); }
+  .seg button { border: 0; background: transparent; color: var(--ink-2); font: 500 15px var(--sans); padding: 0 14px; cursor: pointer; transition: background-color 160ms var(--ease), color 160ms var(--ease); }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button:hover { color: var(--ink); }
+  .seg button.on { background: var(--ink); color: var(--paper); }
+  .seg button:focus-visible { outline-offset: -3px; }
   .btn { border: 0; background: var(--ink); color: var(--paper); padding: 0 20px; font-weight: 500; }
   .btn:hover { background: var(--accent); color: var(--accent-ink); }
   .btn:active { transform: scale(0.98); }
@@ -206,12 +213,17 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
     <h1 class="wordmark">kiku <span>聞く</span></h1>
     <span class="status" id="status"><i></i><span id="statusText">studio</span></span>
   </header>
-  <p class="lede rise">Paste a link, a file, or the words themselves. The Studio reads it aloud and hands it to your phone.</p>
+  <p class="lede rise">Paste a link, a file, or the words themselves. This machine reads it aloud, or draws it as sets, and hands it to your phone.</p>
   <div class="ready rise" id="ready" hidden role="status"></div>
 
   <form class="compose rise" id="compose" autocomplete="off">
     <textarea id="input" name="input" placeholder="https://aeon.co/essays/… or the text itself" spellcheck="false" aria-label="Link or text"></textarea>
     <div class="row">
+      <div class="seg" role="radiogroup" aria-label="What to make">
+        <button type="button" class="on" data-mode="listen" role="radio" aria-checked="true">listen</button>
+        <button type="button" data-mode="see" role="radio" aria-checked="false">see</button>
+      </div>
+      <input type="hidden" name="mode" id="mode" value="listen">
       <label class="btn-2" for="file">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 2v9M4.5 7.5 8 11l3.5-3.5M3 13.5h10"/></svg>
         file
@@ -222,6 +234,9 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
       <select name="voice" id="voice" aria-label="Voice">${voiceOptions}</select>
       <select name="speed" id="speed" class="speed" aria-label="Speed">
         <option value="0.9">0.9×</option><option value="1" selected>1.0×</option><option value="1.1">1.1×</option><option value="1.2">1.2×</option><option value="1.3">1.3×</option>
+      </select>
+      <select name="sets" id="sets" class="sets" aria-label="How many sets" hidden>
+        <option value="3" selected>3 sets</option><option value="5">5 sets</option>
       </select>
       <button class="btn" type="submit" id="go">Read it to me</button>
     </div>
@@ -328,6 +343,18 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
   const savedVoice = store.get('kiku.voice'); if (savedVoice) $('#voice').value = savedVoice;
   $('#voice').addEventListener('change', () => store.set('kiku.voice', $('#voice').value));
 
+  // --- listen or see: the one choice on the form. Voice and speed belong to listening; sets to seeing.
+  function setMode(mode) {
+    $('#mode').value = mode;
+    $$('.seg button').forEach((b) => { const on = b.dataset.mode === mode; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
+    const see = mode === 'see';
+    $('#voice').hidden = see; $('#speed').hidden = see; $('#sets').hidden = !see;
+    go.textContent = see ? 'Draw it for me' : 'Read it to me';
+    store.set('kiku.mode', mode);
+  }
+  $$('.seg button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  setMode(store.get('kiku.mode') === 'see' ? 'see' : 'listen');
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     err.textContent = '';
@@ -401,12 +428,29 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
     let items = [];
     let serverPos = {};
     try { const d = await (await fetch('/api/library')).json(); items = d.items; serverPos = d.positions || {}; } catch {}
-    $('#count').textContent = items.length ? items.length + (items.length === 1 ? ' reading' : ' readings') : '';
+    const heard = items.filter((it) => it.kind !== 'artifact').length, drawn = items.length - heard;
+    $('#count').textContent = [heard ? heard + (heard === 1 ? ' reading' : ' readings') : '', drawn ? drawn + ' drawn' : ''].filter(Boolean).join(' · ');
     if (!items.length) { $('#library').innerHTML = '<div class="empty">Nothing yet. Paste something above.</div>'; return; }
     $('#library').innerHTML = items.map((it) => {
       const pos = Math.max(Number(store.get('kiku.pos.' + it.id) || 0), Number(serverPos[it.id]?.seconds || 0));
       const done = pos > 0 && it.seconds - pos < 20;
       const by = [it.author, it.site].filter(Boolean).join(' · ');
+      if (it.kind === 'artifact') {
+        const href = '/artifacts/' + encodeURIComponent(it.file);
+        return \`<div class="item art" data-id="\${it.id}" data-file="\${esc(it.file)}" data-title="\${esc(it.title)}">
+        <a class="play" href="\${href}" target="_blank" rel="noopener" aria-label="Open">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="5.2" cy="7" r="4"/><circle cx="8.8" cy="7" r="4"/></svg>
+        </a>
+        <div class="body">
+          <span class="t">\${esc(it.title)}</span>
+          <span class="m">\${by ? esc(by) + ' · ' : ''}\${it.sets || 3} sets · drawn here by \${esc(it.model || 'a local model')} · \${day(it.createdAt)}\${it.exportedAt ? ' · <span class="pd" title="A copy is in Proton Drive">proton</span>' : ''}</span>
+        </div>
+        <div class="more">
+          <a class="icon" href="\${href}" download title="Download html"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 2v9M4.5 7.5 8 11l3.5-3.5M3 13.5h10"/></svg></a>
+          <button class="icon del" type="button" title="Remove"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+        </div>
+      </div>\`;
+      }
       return \`<div class="item\${current === it.id ? ' playing' : ''}" data-id="\${it.id}" data-file="\${esc(it.file)}" data-title="\${esc(it.title)}" data-by="\${esc(by)}">
         <button class="play" type="button" aria-label="Play">
           <svg viewBox="0 0 14 14"><path d="M3 1.5v11l9-5.5z" fill="currentColor"/></svg>
@@ -429,6 +473,10 @@ export function page({ voices, defaultVoice, hosts }: PageProps): string {
       await fetch('/api/library/' + row.dataset.id, { method: 'DELETE' });
       if (current === row.dataset.id) { audio.pause(); player.classList.remove('on'); current = null; }
       loadLibrary(); return;
+    }
+    if (row.classList.contains('art')) {
+      if (e.target.closest('.body')) window.open('/artifacts/' + encodeURIComponent(row.dataset.file), '_blank', 'noopener');
+      return;
     }
     if (e.target.closest('.play') || e.target.closest('.body')) play(row.dataset);
   });

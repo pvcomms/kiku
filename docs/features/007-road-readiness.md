@@ -1,6 +1,6 @@
 ---
 title: Run on a laptop, offline, and say what is missing
-status: building
+status: shipped
 created: 2026-09-20
 ---
 
@@ -68,3 +68,17 @@ curl -s localhost:4747/health | node -e 'let s="";process.stdin.on("data",d=>s+=
 The model policy is deliberately a rule, not a table: largest installed model that fits three
 quarters of physical memory, `KIKU_MODEL` to pin one. On the 16GB laptop that is `qwen2.5:7b`;
 on the Studio it is whatever is largest. Nothing to keep in step with `ollama pull`.
+
+## Ran — 2026-09-20, on the Studio
+
+`pnpm test` → 51 pass, 0 fail (34 at the time this spec was written; 009 added the rest).
+`bin/doctor` → 10 lines `ok`, exit 0, 4.0 s with the deep check. `curl /health` → `ok: true`,
+9 checks (10 with `?deep=1`). Interrupted job: submitted a 41-word text reading, ran
+`launchctl kickstart -k` while it was `reading`, and on restart `/api/jobs` showed it as
+`error · interrupted · Interrupted before it finished.` with `again` carrying the text; the
+page showed _again_ and _dismiss_; _again_ re-ran it to `done`. `bin/mirror-ssd` → 6.0 GB to
+`/Volumes/Go/kiku-road` in one pass (library, weights, `qwen2.5:7b` only, uv Python, repo).
+
+Not run here: the wifi-off reading (this is the home machine; the switch is `HF_HUB_OFFLINE`
+and it is covered by the snapshot test), and `restore-from-ssd` onto a second machine — that
+is the laptop's first job.

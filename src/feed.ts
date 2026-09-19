@@ -1,5 +1,7 @@
 // Private podcast feed. Absolute URLs are built from whatever host the client used to reach us.
-import type { Item } from "./library.ts";
+// Only audio goes in: a drawn artifact has no enclosure a player could play, so it is filtered
+// here, once, rather than trusted to every caller.
+import { kindOf, type Item } from "./library.ts";
 
 export function escapeXml(s: string): string {
   return s.replace(
@@ -27,13 +29,14 @@ export function formatDuration(sec: number): string {
 export function buildFeed(items: Item[], base: string): string {
   const now = new Date().toUTCString();
   const entries = items
+    .filter((it) => kindOf(it) === "audio")
     .map((it) => {
       const audio = `${base}/audio/${encodeURIComponent(it.file)}`;
       const by = [it.author, it.site].filter(Boolean).join(" · ");
       const desc = [
         by,
         it.sourceUrl ? `Source: ${it.sourceUrl}` : "",
-        `${it.words.toLocaleString()} words · read by Kokoro (${it.voice})`,
+        `${it.words.toLocaleString()} words · read by Kokoro (${it.voice ?? "af_heart"})`,
       ]
         .filter(Boolean)
         .join("\n");
@@ -55,7 +58,7 @@ export function buildFeed(items: Item[], base: string): string {
       <description>${escapeXml(desc)}</description>
       <content:encoded><![CDATA[${html}]]></content:encoded>
       <enclosure url="${escapeXml(audio)}" length="${it.bytes}" type="audio/mpeg"/>
-      <itunes:duration>${it.seconds}</itunes:duration>
+      <itunes:duration>${it.seconds ?? 0}</itunes:duration>
       <itunes:explicit>false</itunes:explicit>
       <itunes:episodeType>full</itunes:episodeType>
     </item>`;

@@ -32,7 +32,7 @@ import {
   speak,
   VOICES,
 } from "./tts.ts";
-import { Library, newId, type Item } from "./library.ts";
+import { Library, kindOf, newId, type Item } from "./library.ts";
 import {
   JobsStore,
   label,
@@ -42,7 +42,11 @@ import {
   type Mode,
 } from "./jobs.ts";
 import { check, freeBytes, FREE_FLOOR_BYTES } from "./preflight.ts";
+import { chooseModel, installed } from "./ollama.ts";
+import { toSets, type Sets } from "./analyze.ts";
+import { loadTemplate, render, toVenn } from "./artifact.ts";
 import {
+  ARTIFACTS_DIR,
   AUDIO_DIR,
   reconcile,
   resolveExportDir,
@@ -90,11 +94,18 @@ function touch(j: Job) {
   jobsStore.saveSoon(allJobs());
 }
 
-function enqueue(input: Input, voice: string, speed: number, mode: Mode): Job {
+function enqueue(
+  input: Input,
+  voice: string,
+  speed: number,
+  mode: Mode,
+  sets?: Sets,
+): Job {
   const job: Job = {
     id: newId(),
     status: "queued",
     mode,
+    sets,
     title:
       input.kind === "text" ? (input.title ?? "Pasted text") : label(input),
     detail: "waiting",
@@ -140,12 +151,91 @@ async function extractFor(input: Input): Promise<Extracted> {
   return fromText(input.text, input.title);
 }
 
+/**
+ * The `see` half: the same extraction, then a local model reads the document into sets and
+ * the venn template draws them. One file, no network in it. Ollama is asked for the model and
+ * released before this returns, so on a small machine the speech step never shares memory with it.
+ */
+async function see(job: Job, ex: Extracted) {
+  const models = await installed().catch(() => null);
+  if (!models)
+    throw new Error(
+      "Ollama is not running, and drawing needs it. Start it with: brew services start ollama",
+    );
+  const choice = chooseModel(models);
+  if (!choice.ok) throw new Error(`${choice.reason}. Fix: ${choice.fix}`);
+
+  const sets: Sets = job.sets ?? 3;
+  const words = wordCount(ex.markdown);
+  if (words < 40) throw new Error("Too little to draw: under forty words.");
+  job.status = "thinking";
+  job.detail = `${choice.model} is reading ${words.toLocaleString()} words`;
+  touch(job);
+  const { spec, repaired, trimmed } = await toSets(
+    ex.markdown,
+    ex.title,
+    sets,
+    choice.model,
+  );
+
+  job.status = "drawing";
+  job.detail = [
+    `${sets} sets`,
+    repaired ? "after one correction" : "",
+    trimmed ? "from the opening, outline and close — it was long" : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  touch(job);
+  const title = spec.title.trim() || ex.title;
+  const id = newId();
+  const fileName = `${id}-${slugify(title)}.html`;
+  const createdAt = new Date().toISOString();
+  const html = render(loadTemplate(), toVenn(spec), {
+    title,
+    sourceUrl: ex.sourceUrl,
+    author: ex.author,
+    model: choice.model,
+    createdAt,
+  });
+  const out = path.join(lib.artifactsDir, fileName);
+  await fsp.writeFile(out, html);
+
+  const item: Item = {
+    id,
+    kind: "artifact",
+    artifactKind: "venn",
+    sets,
+    model: choice.model,
+    title,
+    author: ex.author,
+    site: ex.site,
+    sourceUrl: ex.sourceUrl,
+    sourceType: ex.sourceType,
+    file: fileName,
+    bytes: Buffer.byteLength(html),
+    words,
+    createdAt,
+  };
+  await lib.add(item);
+  job.itemIds.push(id);
+  void exportItems([item]);
+  console.log(
+    `[kiku] drawn: ${title} (${choice.model}${repaired ? ", repaired" : ""}${trimmed ? ", trimmed" : ""})`,
+  );
+  job.status = "done";
+  job.progress = 1;
+  job.detail = "drawn";
+  touch(job);
+}
+
 async function process1(job: Job) {
   job.status = "extracting";
   job.detail = "fetching and cleaning";
   touch(job);
   const ex = await extractFor(job.input);
   job.title = ex.title;
+  if (job.mode === "see") return see(job, ex);
   const parts = splitIntoParts(ex);
   touch(job);
 
@@ -223,7 +313,7 @@ async function process1(job: Job) {
     job.itemIds.push(id);
     void exportItems([item]);
     console.log(
-      `[kiku] ready: ${item.title} (${formatDuration(item.seconds)})`,
+      `[kiku] ready: ${item.title} (${formatDuration(item.seconds ?? 0)})`,
     );
   }
   job.status = "done";
@@ -237,8 +327,12 @@ async function process1(job: Job) {
 function exportPairs(dir: string, items: Item[]): Pair[] {
   return items.map((it) => ({
     id: it.id,
-    src: path.join(lib.audioDir, it.file),
-    dest: path.join(dir, AUDIO_DIR, it.file),
+    src: lib.pathOf(it),
+    dest: path.join(
+      dir,
+      kindOf(it) === "artifact" ? ARTIFACTS_DIR : AUDIO_DIR,
+      it.file,
+    ),
   }));
 }
 
@@ -444,6 +538,10 @@ function asMode(raw: unknown): Mode {
   return raw === "see" ? "see" : "listen";
 }
 
+function asSets(raw: unknown): Sets {
+  return Number(raw) === 5 ? 5 : 3;
+}
+
 /** A long reading writes a few hundred MB before it is done. Refuse to begin one on a full disk. */
 async function roomToWork(): Promise<string | null> {
   const free = await freeBytes(HOME).catch(() => null);
@@ -457,6 +555,7 @@ app.post("/api/jobs", async (c) => {
   let voice = DEFAULT_VOICE;
   let speed = 1;
   let mode: Mode = "listen";
+  let sets: Sets = 3;
   let title: string | undefined;
 
   const takeText = (raw: unknown) => {
@@ -482,6 +581,7 @@ app.post("/api/jobs", async (c) => {
     if (body.speed !== undefined) speed = Number(body.speed);
     if (typeof body.title === "string") title = body.title;
     mode = asMode(body.mode);
+    sets = asSets(body.sets);
     takeText(firstText(body.url, body.input, body.text));
   } else if (
     ct.includes("multipart/form-data") ||
@@ -493,6 +593,7 @@ app.post("/api/jobs", async (c) => {
       speed = Number(body.speed);
     if (typeof body.title === "string" && body.title) title = body.title;
     mode = asMode(body.mode);
+    sets = asSets(body.sets);
     const files = ([] as unknown[]).concat(body.file ?? []);
     for (const f of files) {
       if (f instanceof File && f.size > 0)
@@ -514,7 +615,7 @@ app.post("/api/jobs", async (c) => {
   const full = await roomToWork();
   if (full) return c.json({ error: full }, 507);
 
-  const created = inputs.map((inp) => enqueue(inp, voice, speed, mode));
+  const created = inputs.map((inp) => enqueue(inp, voice, speed, mode, sets));
   return c.json(
     {
       id: created[0].id,
@@ -545,7 +646,7 @@ app.post("/api/jobs/:id/again", async (c) => {
   const full = await roomToWork();
   if (full) return c.json({ error: full }, 507);
   restored = restored.filter((x) => x.id !== j.id);
-  const job = enqueue(j.again, j.voice, j.speed, j.mode);
+  const job = enqueue(j.again, j.voice, j.speed, j.mode, j.sets);
   return c.json(publicJob(job), 202);
 });
 
@@ -828,6 +929,18 @@ async function serveAudio(c: Ctx, name: string): Promise<Response> {
     : (Readable.toWeb(fs.createReadStream(file)) as ReadableStream);
   return new Response(body, { status: 200, headers });
 }
+
+// A drawn artifact is one self-contained page; serve it as a page so it opens in place.
+app.get("/artifacts/:file", async (c) => {
+  const name = path.basename(c.req.param("file"));
+  if (!name.endsWith(".html")) return c.notFound();
+  const html = await fsp
+    .readFile(path.join(lib.artifactsDir, name), "utf8")
+    .catch(() => null);
+  if (html === null) return c.notFound();
+  c.header("cache-control", "private, max-age=3600");
+  return c.html(html);
+});
 
 app.on(["GET", "HEAD"], "/audio/:file", (c) =>
   serveAudio(c, c.req.param("file")),

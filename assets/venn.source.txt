@@ -1,0 +1,3 @@
+interactive-venn-template fd841ff
+vendored 2026-09-19T21:07:10.630Z from /Users/p/Code/interactive-venn-template/index.html
+patched: Google Fonts links → inline @font-face (Newsreader 300/300i, IBM Plex Mono 400/500, OFL, from assets/fonts); window.KIKU_ARTIFACT hook after the state initialiser

@@ -1,6 +1,6 @@
 ---
 title: Copy every finished reading into Proton Drive
-status: building
+status: shipped
 created: 2026-09-20
 ---
 
@@ -52,3 +52,13 @@ curl -s -X POST localhost:4747/api/export/reconcile              # {"copied":[],
 - [ ] With the folder renamed away, a reading still completes and `/health` says copies are off
 - [ ] Renaming it back and forcing a sweep copies what was missed
 - [ ] The copy opens in the Proton Drive app on the phone
+
+## Ran — 2026-09-20, on the Studio
+
+`pnpm test` → 51 pass. `/health` → `exportDir: …/ProtonDrive-pvcomms@pm.me-folder/Kiku`.
+On restart the boot sweep copied all five readings (78 MB) into `Kiku/Audio/` before the
+forced `POST /api/export/reconcile` ran, which then reported all five `present`, none failed.
+Every item carries `exportedAt`; the page marks each row `proton`. The drawing from 009
+landed in `Kiku/Artifacts/` four seconds after it was written (`[kiku] exported …html`).
+
+Not run: the rename-the-folder-away test and the phone-side check in the Proton Drive app.

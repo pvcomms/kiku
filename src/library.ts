@@ -1,27 +1,42 @@
-// The library: one JSON file plus the audio folder. Written serially so concurrent jobs never clobber it.
+// The library: one JSON file plus the audio and artifacts folders. Written serially so
+// concurrent jobs never clobber it.
 import fs from "node:fs/promises";
 import path from "node:path";
 
+/** What a reading became. Absent on entries from before there was a choice, which were all audio. */
+export type Kind = "audio" | "artifact";
+
 export type Item = {
   id: string;
+  kind?: Kind;
   title: string;
   author?: string;
   site?: string;
   sourceUrl?: string;
   sourceType: "url" | "file" | "text";
-  file: string; // basename inside audio/
+  file: string; // basename inside audio/ or artifacts/, by kind
   bytes: number;
-  seconds: number;
   words: number;
-  voice: string;
-  speed: number;
   createdAt: string; // ISO
   exportedAt?: string; // ISO; when a copy was confirmed in the Proton Drive folder
+  // audio
+  seconds?: number;
+  voice?: string;
+  speed?: number;
+  // artifact
+  artifactKind?: "venn";
+  sets?: 3 | 5;
+  model?: string; // the local model that read it
 };
+
+export function kindOf(item: Item): Kind {
+  return item.kind ?? "audio";
+}
 
 export class Library {
   readonly home: string;
   readonly audioDir: string;
+  readonly artifactsDir: string;
   readonly textDir: string;
   private file: string;
   private items: Item[] = [];
@@ -30,12 +45,20 @@ export class Library {
   constructor(home: string) {
     this.home = home;
     this.audioDir = path.join(home, "audio");
+    this.artifactsDir = path.join(home, "artifacts");
     this.textDir = path.join(home, "text");
     this.file = path.join(home, "library.json");
   }
 
+  /** Where an item's file lives, by kind. */
+  pathOf(item: Item): string {
+    const dir = kindOf(item) === "artifact" ? this.artifactsDir : this.audioDir;
+    return path.join(dir, item.file);
+  }
+
   async init(): Promise<void> {
     await fs.mkdir(this.audioDir, { recursive: true });
+    await fs.mkdir(this.artifactsDir, { recursive: true });
     await fs.mkdir(this.textDir, { recursive: true });
     try {
       const raw = await fs.readFile(this.file, "utf8");
@@ -67,7 +90,7 @@ export class Library {
     await this.mutate(() => {
       this.items = this.items.filter((i) => i.id !== id);
     });
-    await fs.unlink(path.join(this.audioDir, item.file)).catch(() => {});
+    await fs.unlink(this.pathOf(item)).catch(() => {});
     await fs.unlink(path.join(this.textDir, item.id + ".txt")).catch(() => {});
     return true;
   }

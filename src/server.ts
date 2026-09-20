@@ -64,6 +64,11 @@ import {
 import { page } from "./ui.ts";
 
 const PORT = Number(process.env.KIKU_PORT ?? 4747);
+// Which interface to answer on. The default stays 0.0.0.0 so a home network
+// keeps working unchanged. Set KIKU_HOST=127.0.0.1 when the network is not
+// yours — a rented flat, a hotel, a cafe — and reach the page over the tailnet
+// instead: `tailscale serve --bg 4747` already proxies it.
+const HOST = process.env.KIKU_HOST ?? "0.0.0.0";
 const HOME = process.env.KIKU_HOME ?? path.join(os.homedir(), "Kiku");
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const COVER = path.join(ROOT, "assets", "cover.png");
@@ -1021,7 +1026,7 @@ serve({ fetch: pub.fetch, port: PUBLIC_PORT, hostname: "127.0.0.1" });
 setInterval(() => void detectTailnet(), 5 * 60 * 1000);
 void pollTextFeeds();
 setInterval(() => void pollTextFeeds(), 30 * 60 * 1000);
-serve({ fetch: app.fetch, port: PORT, hostname: "0.0.0.0" }, () => {
+serve({ fetch: app.fetch, port: PORT, hostname: HOST }, () => {
   console.log(
     `[kiku] listening on ${hostList().join("  ")}  (library: ${HOME})`,
   );

@@ -1,6 +1,6 @@
 # Agents
 
-Constellation-wide rules: `~/Code/cfap/AGENTS.md`. Read it once, then this. The map is
+Constellation-wide rules: `~/Code/spine/AGENTS.md`. Read it once, then this. The map is
 `docs/ARCHITECTURE.md` — read that instead of listing files.
 
 ## Stack

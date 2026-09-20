@@ -69,12 +69,12 @@ breaks that.
 
 ---
 
-<!-- BEGIN:cfap -->
+<!-- BEGIN:capp -->
 
 ## Constellation rules
 
 This repo is part of the Center for Applied Post-Phenomenology constellation. These rules hold
-here and in every sibling repo. This block is generated — edit `cfap/KERNEL.md`, not this copy.
+here and in every sibling repo. This block is generated — edit `spine/KERNEL.md`, not this copy.
 
 **Read this much, then stop.** This file, then `docs/ARCHITECTURE.md` for the map, then the one
 feature spec you were given at `docs/features/NNN-slug.md`. Do not crawl the repo to get
@@ -115,4 +115,4 @@ changed and why it mattered.
 **Before you finish**, run the repo's tests and typecheck, and say plainly what passed, what
 failed, and what you did not do.
 
-<!-- END:cfap -->
+<!-- END:capp -->

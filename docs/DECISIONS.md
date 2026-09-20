@@ -50,8 +50,8 @@ a secret link for that narrow case.
 ---
 
 **2026-09-19 — Doc set adopted.**
-Repo joined the `cfap` constellation standard: `AGENTS.md`, `docs/ARCHITECTURE.md`, this
-file, `docs/TEMPLATE.md`, `docs/features/`. `~/Code/cfap/bin/scan.py` reports on it.
+Repo joined the `CAPP` constellation standard: `AGENTS.md`, `docs/ARCHITECTURE.md`, this
+file, `docs/TEMPLATE.md`, `docs/features/`. `~/work/capp/spine/bin/scan.py` reports on it.
 
 ---
 

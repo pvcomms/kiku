@@ -31,9 +31,11 @@ kiku/
     preflight.ts   what this machine has and the fix for each gap; /health and bin/doctor
     library.ts     ~/Kiku/library.json, written serially under a lock; audio and artifacts
     feed.ts        library → RSS with iTunes tags; audio only; absolute URLs from the request host
-    podcasts.ts    real podcast subscriptions; plays the publisher's own enclosure
-    textfeeds.ts   RSS/Atom text feeds; no enclosure, so items go through the TTS pipeline
-    ui.ts          the page, served as a string. listen/see, player, library, feeds, inbox
+    podcasts.ts    shows; plays the publisher's own enclosure; looksLikeShow tells one from a text feed
+    textfeeds.ts   RSS/Atom text feeds, the Inbox for all three source kinds, opmlUrls
+    hygiene.ts     the link rules every source passes through once: pixels, redirectors, utm_
+    mail/          accounts.ts (~/Kiku/accounts.json) · detect.ts (list headers) · sanitize.ts · sync.ts (IMAP)
+    ui.ts          the page, served as a string: listen/see/read, player, inbox, library, sources, setup; readPage
   bin/
     kiku           CLI; --see draws instead of reads
     doctor         the readiness report from the shell; exit 1 when a reading cannot happen
@@ -78,12 +80,19 @@ text ──────────────────────┘      
 The two halves are strictly one after the other — `pump()` runs one job at a time and the
 model is released as it answers — so on a 16GB laptop Kokoro never shares memory with Ollama.
 
-Feeds are a second entrance, not a second pipeline:
+Sources are a second entrance, not a second pipeline. Three kinds feed one Inbox, and every
+inbox item offers the same four verbs:
 
 ```
-podcasts.ts  ──▶ publisher's own <enclosure> audio ──▶ played directly, never converted
-textfeeds.ts ──▶ new items ──▶ Inbox ──▶ (person chooses) ──▶ the pipeline above
+textfeeds.ts ──▶ new posts    ─┐
+podcasts.ts  ──▶ new episodes ─┼─▶ Inbox ──▶ listen ─▶ the pipeline above (an episode: the enclosure, as it is)
+mail/sync.ts ──▶ new letters  ─┘             see ────▶ the drawing half
+   (cleaned HTML in ~/Kiku/mail/)            read ───▶ extract + clean, no speech → text/<id>.txt → /read/:id
+                                             dismiss
 ```
+
+Every link from every source passes through `hygiene.ts` once, at the door. Every source
+starts caught up. `mode: "read"` on a job is the third leg of `process1()`.
 
 ## Routes
 
@@ -97,9 +106,11 @@ textfeeds.ts ──▶ new items ──▶ Inbox ──▶ (person chooses) ─�
 | `GET /feed.xml` · `GET /audio/:file`                                             | the private podcast feed, Range-capable                       |
 | `GET /artifacts/:file`                                                           | a drawn page, served as a page                                |
 | `POST /api/export/reconcile`                                                     | copy anything missing into Proton Drive now                   |
-| `GET`/`POST`/`DELETE` `/api/podcasts…` `/api/feeds…`                             | subscriptions, both kinds                                     |
-| `POST /api/feeds/poll` · `POST /api/feeds/import`                                | refresh; OPML-style import                                    |
-| `GET /api/inbox` · `POST /api/inbox/:id/{listen,dismiss}`                        | the deliberate-choice gate                                    |
+| `GET`/`POST` `/api/sources` · `DELETE /api/sources/mail/:name`                   | all three kinds; `kind: auto` tells a show from writing       |
+| `GET`/`POST`/`DELETE` `/api/podcasts…` `/api/feeds…` · `POST /api/mail/sync`     | the older per-kind routes, still served                       |
+| `POST /api/feeds/poll` · `POST /api/feeds/import`                                | every source, now; URLs or OPML, each becoming what it is     |
+| `GET /api/inbox` · `POST /api/inbox/:id/{listen,see,read,dismiss}`               | the deliberate-choice gate: the four verbs                    |
+| `GET /read/:id`                                                                  | a cleaned reading as a page                                   |
 | `GET /api/positions`                                                             | resume points, shared across devices                          |
 | `GET /text/:id` · `/cover.png` · `/manifest.webmanifest` · `/health`             | supporting                                                    |
 
@@ -114,6 +125,9 @@ textfeeds.ts ──▶ new items ──▶ Inbox ──▶ (person chooses) ─�
 | `~/Kiku/jobs.json`                                                | read+write | jobs, so an interrupted one is reported                   | `KIKU_HOME`                 |
 | `~/Kiku/positions.json`                                           | read+write | resume points                                             | `KIKU_HOME`                 |
 | `~/Kiku/public-token`                                             | read+write | the secret for `kiku-public`                              | `KIKU_HOME`                 |
+| `~/Kiku/accounts.json`                                            | read+write | mailboxes with passwords, mode 600; never sent back      | `KIKU_HOME`                 |
+| `~/Kiku/mail.json`, `~/Kiku/mail/*.html`                          | read+write | the mail cursor; each letter, cleaned                     | `KIKU_HOME`                 |
+| an IMAP server (Bridge on `127.0.0.1:1143`, or `imap.gmail.com`)  | read       | headers in the last 30 days; the source of newsletters only | `accounts.json`           |
 | `~/Library/CloudStorage/ProtonDrive-*-folder/Kiku/`               | write      | copies of every reading and drawing                       | `KIKU_EXPORT_DIR`           |
 | `~/.cache/huggingface/hub/models--mlx-community--Kokoro-82M-bf16` | read       | the voice; `HF_HUB_OFFLINE=1` once it is there            | `HF_HOME`, `HF_HUB_CACHE`   |
 | `127.0.0.1:11434`                                                 | read       | Ollama; the largest installed model that fits ¾ of memory | `KIKU_OLLAMA`, `KIKU_MODEL` |

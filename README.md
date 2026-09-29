@@ -1,12 +1,12 @@
 # kiku · 聞く
 
-Paste a link, a file, or the words themselves. Your Mac reads it aloud with Kokoro and hands the audio to your phone as a private podcast episode — or, if you ask to _see_ it instead, a local model reads it into three or five overlapping sets and draws them as one interactive page you can open anywhere. Either lands in your Proton Drive. Nothing leaves the machine: no API keys, no cloud voices, no cloud models, no font requests, no analytics. It runs at home and on a laptop with no network.
+Everything you subscribe to — the feeds, the newsletters, the podcasts — arrives in one inbox on your Mac, and nothing else does. Each item waits for one of four verbs: **listen**, and Kokoro reads it aloud into a private podcast episode for your phone; **see**, and a local model reads it into three or five overlapping sets drawn as one interactive page; **read**, and the cleaned text is set on a page; or **dismiss**. Nothing ranks, recommends, or plays next. Nothing leaves the machine: no API keys, no cloud voices, no cloud models, no font requests, no analytics, and no tracking pixel ever fires. It runs at home and on a laptop with no network. You can still paste a link, a file or the words themselves.
 
 ![The kiku page: a compose box for a link, a file or pasted text with a listen / see choice and a voice and speed picker, an empty Inbox, and a Library listing two readings with play buttons and one drawing that opens as a page](docs/img/kiku.png)
 
 ## What it reads and writes
 
-It reads the links you paste, the files you drop, the text you type and the feeds you subscribe to, all from the Mac it runs on. It writes to one folder, `~/Kiku/` (`KIKU_HOME` moves it):
+It reads the links you paste, the files you drop, the text you type, the feeds and shows you subscribe to, and the newsletters in a mailbox you give it, all from the Mac it runs on. It writes to one folder, `~/Kiku/` (`KIKU_HOME` moves it):
 
 | Path                              | What                                                        |
 | --------------------------------- | ----------------------------------------------------------- |
@@ -14,12 +14,14 @@ It reads the links you paste, the files you drop, the text you type and the feed
 | `artifacts/*.html`                | each drawing: one self-contained page, fonts inside         |
 | `library.json`, `positions.json`  | the library, and where you stopped in each reading          |
 | `jobs.json`                       | jobs, so one interrupted by a restart is reported, not lost |
-| `podcasts.json`, `textfeeds.json` | subscriptions of both kinds, and the Inbox                  |
+| `podcasts.json`, `textfeeds.json` | shows and text feeds, and the Inbox all three kinds feed    |
+| `accounts.json`, `mail.json`      | mailboxes (mode 600, never shown back), and the mail cursor |
+| `mail/*.html`                     | each newsletter, cleaned: no pixels, no trackers, no images |
 | `public-token`                    | the secret behind the optional public feed link             |
 
 Outside that folder: `~/Library/Logs/kiku.log` when it runs under launchd; the Kokoro weights, about 340 MB, in `~/.cache/huggingface/hub/`, downloaded once on the first reading; and, if the Proton Drive app is signed in, a copy of every reading and drawing in `<Proton Drive>/Kiku/Audio/` and `Kiku/Artifacts/` (`KIKU_EXPORT_DIR` chooses another folder; no folder means no copies, and nothing else changes).
 
-Everything else stays on the machine. The only outbound requests are the links and feeds you gave it and that one model download: no cloud voices, no cloud models, no API keys, no analytics, no fonts from a CDN. Drawing talks to Ollama on `127.0.0.1` and to nothing else. The page and the feed are served to your home network with no login, so your Wi-Fi is the trust boundary. [SECURITY.md](SECURITY.md) has the whole model, including what the public feed link exposes if you turn it on.
+Everything else stays on the machine. The only outbound requests are the links, feeds and mailbox you gave it and that one model download: no cloud voices, no cloud models, no API keys, no analytics, no fonts from a CDN. Drawing talks to Ollama on `127.0.0.1` and to nothing else. The page and the feed are served to your home network with no login, so your Wi-Fi is the trust boundary. [SECURITY.md](SECURITY.md) has the whole model, including what the public feed link exposes if you turn it on.
 
 ## Prerequisites
 
@@ -39,7 +41,7 @@ bin/setup-road               # everything above, idempotent; ends in bin/doctor
 pnpm start                   # or pnpm dev, which restarts when a file changes
 ```
 
-`bin/setup-road` installs the Homebrew formulae, `pnpm install`, builds `.venv`, starts Ollama under launchd and pulls the model, downloads the Kokoro weights with a first reading, installs the kiku agent and builds the Mac app. Run it again any time; it only does what is not done. The pieces on their own:
+`bin/setup-road` installs the Homebrew formulae, `pnpm install`, builds `.venv`, starts Ollama under launchd and pulls the model, downloads the Kokoro weights with a first reading, installs the kiku agent and builds the Mac app. Run it again any time; it only does what is not done. The first time the page opens with nothing subscribed it is a setup page: feed addresses, an OPML file, a mailbox. `?setup=1` shows it again. The pieces on their own:
 
 ```bash
 pnpm install
@@ -100,7 +102,7 @@ text ──────────────────────┘      
                                    └──▶ <Proton Drive>/Kiku/{Audio,Artifacts}/   (a copy, after the fact; never read back)
 ```
 
-- `src/server.ts` — Hono on Node 25 (type-stripped TypeScript, no build step). Routes: `/`, `/health`, `/api/jobs`, `/api/library`, `/feed.xml`, `/audio/:file`, `/artifacts/:file`, `/api/export/reconcile`, `/cover.png`.
+- `src/server.ts` — Hono on Node 25 (type-stripped TypeScript, no build step). Routes: `/`, `/read/:id`, `/health`, `/api/jobs`, `/api/library`, `/feed.xml`, `/audio/:file`, `/artifacts/:file`, `/api/export/reconcile`, `/cover.png`, and the sources and inbox routes below.
 - `src/extract.ts` — URL / file / text → `{ title, author, site, markdown }`; chapter splitting for books.
 - `src/clean.ts` — markdown to prose Kokoro reads well (links to their text, no code, no footnote markers, abbreviations expanded).
 - `src/tts.ts` + `bin/tts.py` — spawns the MLX driver, streams progress, encodes.
@@ -109,13 +111,23 @@ text ──────────────────────┘      
 - `src/export.ts` — the Proton Drive copies. `src/preflight.ts` — the readiness report behind `/health` and `bin/doctor`.
 - `src/ui.ts` — the page. Instrument Serif / General Sans / JetBrains Mono, self-hosted in `assets/fonts`.
 
-## Feeds & Inbox
+## Sources & Inbox
 
-Subscribe to a blog, newsletter, or news feed (paste its RSS/Atom URL under **Feeds**) and Kiku checks it every 30 minutes. New posts wait in the **Inbox** — tap one to read it aloud through the same pipeline as a pasted link, or dismiss it. Subscribing starts a feed caught-up: only posts published after you add it show up, so you never get its whole archive dumped in at once.
+Three kinds of source, one section on the page, one Inbox:
 
-- `src/textfeeds.ts` — `TextFeeds` (subscriptions + inbox, `~/Kiku/textfeeds.json`) and a hand-rolled RSS 2.0 / Atom parser (`parseArticleFeed`).
-- Routes: `GET/POST /api/feeds`, `DELETE /api/feeds/:id`, `POST /api/feeds/import` (bulk, e.g. from an OPML/RSS Guard export), `POST /api/feeds/poll` (check now), `GET /api/inbox`, `POST /api/inbox/:id/listen`, `POST /api/inbox/:id/dismiss`.
-- This is for text feeds only — real podcasts (audio enclosures) stay in the **Podcasts** section above and play directly from the publisher's file.
+- **Text feeds** — a blog, a newsletter's public feed, a news site. Polled every 30 minutes.
+- **Shows** — a podcast's RSS feed, public or the private URL a paid show gives you. A new episode is an inbox item; _listen_ plays the publisher's own file, never converted.
+- **Mailboxes** — the newsletters that only arrive by mail, every paid Substack among them. Read over IMAP from your Mac: Proton through the Bridge app, Gmail with an app password, or any IMAP server. Detected by their list headers; everything else in the mailbox is never fetched. Each letter is cleaned on arrival — tracking pixels, hidden blocks and images dropped, redirect links unwrapped or reduced to their text, `utm_` and its cousins stripped — and kept in `~/Kiku/mail/`.
+
+Every source starts caught up: only what is published after you add it reaches the Inbox, never the archive. Paste one URL and kiku tells a show from writing by what is in it (Substack attaches a voiceover to every post, so audio alone is not the tell), or say which. Paste many, or the text of an OPML export from another reader, under _many at once_.
+
+Each inbox item offers **listen**, **see**, **read** and **dismiss**. Nothing leaves the Inbox except by one of them.
+
+- `src/textfeeds.ts` — `TextFeeds` (text feeds, and the Inbox for all three kinds, `~/Kiku/textfeeds.json`), the RSS 2.0 / Atom parser, `opmlUrls`.
+- `src/podcasts.ts` — shows; `looksLikeShow` tells a podcast from a text feed that carries audio.
+- `src/mail/` — `accounts.ts` (`~/Kiku/accounts.json`), `detect.ts` (list headers), `sanitize.ts` (the letter as the author wrote it), `sync.ts` (IMAP, a UID cursor per folder, thirty days back at most).
+- `src/hygiene.ts` — the link rules every source passes through once, a test per rule.
+- Routes: `GET/POST /api/sources`, `DELETE /api/sources/mail/:name`, `POST /api/mail/sync`, the older `GET/POST/DELETE /api/feeds…` and `/api/podcasts…`, `POST /api/feeds/import` (URLs or `opml`), `POST /api/feeds/poll` (every source, now), `GET /api/inbox`, `POST /api/inbox/:id/{listen,see,read,dismiss}`, `GET /read/:id`.
 
 ## The Mac app
 

@@ -123,3 +123,37 @@ than producing a page that half works, and `assets/venn.source.txt` records whic
 sha was vendored. Importing the sibling repo at run time was rejected: an artifact must be one
 file that opens from `file://` on a plane, and the template's own feature to make zero
 third-party requests was still `next` at the time.
+
+---
+
+**2026-09-30 — The mailbox is a source, because paid Substack posts exist nowhere else.**
+A paid Substack's `/feed` carries its free posts and a stub for the rest. The full post goes
+to subscribers by mail, and only there. A reader of paid newsletters that reads only feeds
+reads the wrong half. So kiku pulls newsletters over IMAP, from the Mac, with the detection
+and cleaning ported from Yomu, and Yomu is retired. Three dependencies came with it —
+`imapflow`, `mailparser`, `sanitize-html` — each doing a job the standard library does not
+(IMAP, RFC 822 parsing, HTML sanitising with a filter per tag), all MIT.
+
+---
+
+**2026-09-30 — Every link passes through hygiene once, at the door.**
+A person subscribed to an author, not to the author's mailing provider's click log. Tracking
+pixels are dropped, redirect links are unwrapped when the target is in the URL and reduced to
+their text when it is not, and `utm_` and its cousins are stripped, for every source, in
+`src/hygiene.ts`, with a test per rule. Sponsor paragraphs are not detected: that would need
+a model to decide what is fluff, and the person chose hand curation.
+
+---
+
+**2026-09-30 — A mailbox, a show and a feed all start caught up.**
+The first pass marks what is already there as seen and fetches nothing. The alternative — a
+month of newsletters landing at once — is the backlog the inbox exists to refuse. What
+arrives from now on is the inbox.
+
+---
+
+**2026-09-30 — A show is told from writing by its text, not by its enclosures.**
+Substack attaches a voiceover to every post, so "has audio" describes a text publication as
+well as a podcast. A show's items are mostly audio and their text is show notes; a post's
+body is the post. Median item body under 400 words with audio on most items is a show. The
+page lets the person overrule the guess, because the guess will sometimes be wrong.

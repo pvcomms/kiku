@@ -13,7 +13,13 @@ export type Podcast = {
   feedUrl: string;
   artworkUrl?: string;
   addedAt: string; // ISO
+  lastPolled?: string; // ISO
+  lastError?: string;
+  /** Episode ids already surfaced in the inbox. Absent on shows from before episodes went there. */
+  seen?: string[];
 };
+
+const SEEN_CAP = 300;
 
 export type Episode = {
   id: string;
@@ -70,6 +76,34 @@ export class Podcasts {
       this.items = this.items.filter((p) => p.id !== id);
     });
     return true;
+  }
+
+  /**
+   * Record a poll: the episodes not seen before are returned for the inbox. A show that has no
+   * `seen` yet — subscribed before episodes went to the inbox, or just now — starts caught up,
+   * the way a text feed does, so its back catalogue is never dumped on the person.
+   */
+  applyPoll(
+    showId: string,
+    episodes: Episode[],
+    error?: string,
+  ): Promise<Episode[]> {
+    const fresh: Episode[] = [];
+    return this.mutate(() => {
+      const show = this.items.find((p) => p.id === showId);
+      if (!show) return;
+      show.lastPolled = new Date().toISOString();
+      show.lastError = error;
+      if (error) return;
+      const catchingUp = show.seen === undefined;
+      const seen = new Set(show.seen ?? []);
+      for (const ep of episodes) {
+        if (seen.has(ep.id)) continue;
+        seen.add(ep.id);
+        if (!catchingUp) fresh.push(ep);
+      }
+      show.seen = [...seen].slice(-SEEN_CAP);
+    }).then(() => fresh);
   }
 
   private mutate(fn: () => void): Promise<void> {
@@ -158,6 +192,36 @@ function parseItem(block: string): Episode | null {
     description,
   };
 }
+
+/**
+ * Whether a feed is a show rather than writing that happens to carry audio. Enclosures alone
+ * do not say: Substack attaches a voiceover to every post of a text publication. A show's
+ * items are mostly audio and their text is show notes, a few hundred words at most; a post's
+ * body is the post. The person can always say otherwise on the page.
+ */
+export function looksLikeShow(xml: string): boolean {
+  const blocks = xml.match(/<item\b[\s\S]*?<\/item>/gi) ?? [];
+  if (blocks.length === 0) return false;
+  const withAudio = blocks.filter((b) => /<enclosure\b/i.test(b)).length;
+  if (withAudio * 2 <= blocks.length) return false;
+  const words = blocks
+    .slice(0, 20)
+    .map((b) => {
+      const body =
+        tag(b, "content:encoded") ??
+        tag(b, "description") ??
+        tag(b, "itunes:summary") ??
+        "";
+      return stripTags(decodeEntities(body)).split(/\s+/).filter(Boolean)
+        .length;
+    })
+    .sort((a, b) => a - b);
+  const median = words[Math.floor(words.length / 2)] ?? 0;
+  return median < SHOW_NOTES_MAX_WORDS;
+}
+
+/** Show notes run to a couple of hundred words; a post runs to thousands. */
+const SHOW_NOTES_MAX_WORDS = 400;
 
 export function tag(s: string, name: string): string | undefined {
   const re = new RegExp(`<${name}[^>]*>([\\s\\S]*?)<\\/${name}>`, "i");

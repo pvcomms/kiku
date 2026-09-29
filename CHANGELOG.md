@@ -7,6 +7,35 @@ the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The conduit (spec 010). One **Sources** section for three kinds — text feeds, shows and
+  mailboxes — and one **Inbox** that all three feed, with four verbs on every item: **Listen**,
+  **See**, **Read**, **Dismiss**. A new episode of a show is an inbox item whose Listen plays
+  the publisher's file; a newsletter pulled from the mailbox is an inbox item whose Listen runs
+  the pipeline on the cleaned HTML kept in `~/Kiku/mail/`. Read cleans without speaking and
+  shows the paragraphs at `/read/:id`. A first run with no sources is a setup page.
+- Mail. `src/mail/` pulls newsletters over IMAP from `~/Kiku/accounts.json` (mode 600), by
+  list headers and sending-platform domains, thirty days back at most, checkpointing a UID
+  cursor per folder in `~/Kiku/mail.json`. Proton through Bridge, Gmail with an app password,
+  or any IMAP server. Ported from Yomu, which is retired. `/health` reports a Bridge that is
+  not running.
+- Hygiene. `src/hygiene.ts` strips tracking parameters, unwraps redirectors whose target is in
+  the URL, drops opaque click trackers to their text and finds tracking pixels — for every
+  link from every source, once. A letter's Substack chrome (forward notice, subscribe nags,
+  the postal footer) is stripped before it is spoken or shown.
+- OPML import, and a list of URLs, through `POST /api/feeds/import` and the Sources section;
+  each URL becomes a show or a text feed by what it contains, or by what the person says.
+- `POST /api/jobs` takes `mode: "read"`; `bin/kiku` gains nothing new, the page does.
+
+### Changed
+
+- A show subscribed now starts caught up, like a text feed: only episodes published after
+  subscribing reach the inbox. Shows subscribed before this change are caught up on the first
+  poll and lose nothing.
+- The inbox cap is 2000 items, up from 500. Nothing else leaves it except by a verb.
+- The speech step sets `HF_HUB_DISABLE_TELEMETRY=1` alongside `HF_HUB_OFFLINE`.
+
+### Added, earlier
+
 - Seeing. Submit chooses _listen_ or _see_. _See_ hands the extracted markdown to the largest
   installed Ollama model that fits in memory, asks it for three or five sets, the meetings
   between them, where the author stands and the set the document never draws, validates the

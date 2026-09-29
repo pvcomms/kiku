@@ -58,6 +58,9 @@ export function speak(
           // try. On a plane the alternative is mlx-audio hanging on a lookup it cannot make.
           HF_HUB_OFFLINE:
             process.env.HF_HUB_OFFLINE ?? (kokoroSnapshot() ? "1" : "0"),
+          // The hub client counts downloads unless told not to. Nothing about a reading is
+          // anyone else's business, the first one included.
+          HF_HUB_DISABLE_TELEMETRY: "1",
         },
       },
     );

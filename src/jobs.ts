@@ -9,10 +9,12 @@ import path from "node:path";
 export type Input =
   | { kind: "url"; url: string }
   | { kind: "text"; text: string; title?: string }
-  | { kind: "file"; name: string; buf: Buffer };
+  | { kind: "file"; name: string; buf: Buffer }
+  /** A newsletter already on disk as cleaned HTML under ~/Kiku/mail/. */
+  | { kind: "mail"; file: string; title: string; from?: string };
 
-/** What the reading turns into. `listen` speaks it; `see` draws it. */
-export type Mode = "listen" | "see";
+/** What the reading turns into. `listen` speaks it; `see` draws it; `read` only cleans it, to be read. */
+export type Mode = "listen" | "see" | "read";
 
 export type JobStatus =
   | "queued"
@@ -47,7 +49,8 @@ export type StoredJob = Omit<Job, "input"> & {
   input: string;
   again?:
     | { kind: "url"; url: string }
-    | { kind: "text"; text: string; title?: string };
+    | { kind: "text"; text: string; title?: string }
+    | { kind: "mail"; file: string; title: string; from?: string };
 };
 
 /** Pasted text is kept for a retry only while it is small enough not to bloat the file. */
@@ -56,6 +59,7 @@ const MAX_REPLAY_CHARS = 20_000;
 export function label(input: Input): string {
   if (input.kind === "url") return input.url;
   if (input.kind === "file") return input.name;
+  if (input.kind === "mail") return input.title;
   return "pasted text";
 }
 
@@ -63,6 +67,7 @@ export function toStored(job: Job): StoredJob {
   const { input, ...rest } = job;
   const stored: StoredJob = { ...rest, input: label(input) };
   if (input.kind === "url") stored.again = { kind: "url", url: input.url };
+  else if (input.kind === "mail") stored.again = { ...input };
   else if (input.kind === "text" && input.text.length <= MAX_REPLAY_CHARS)
     stored.again = { kind: "text", text: input.text, title: input.title };
   return stored;

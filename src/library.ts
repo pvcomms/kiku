@@ -3,8 +3,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-/** What a reading became. Absent on entries from before there was a choice, which were all audio. */
-export type Kind = "audio" | "artifact";
+/**
+ * What a reading became. Absent on entries from before there was a choice, which were all audio.
+ * `text` is the cleaned paragraphs alone, for reading on the page; it never enters the feed and
+ * is never copied out.
+ */
+export type Kind = "audio" | "artifact" | "text";
 
 export type Item = {
   id: string;
@@ -52,7 +56,13 @@ export class Library {
 
   /** Where an item's file lives, by kind. */
   pathOf(item: Item): string {
-    const dir = kindOf(item) === "artifact" ? this.artifactsDir : this.audioDir;
+    const kind = kindOf(item);
+    const dir =
+      kind === "artifact"
+        ? this.artifactsDir
+        : kind === "text"
+          ? this.textDir
+          : this.audioDir;
     return path.join(dir, item.file);
   }
 

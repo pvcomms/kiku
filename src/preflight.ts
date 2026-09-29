@@ -6,6 +6,7 @@
 // which takes a few seconds and is what `bin/doctor` runs.
 import fs from "node:fs";
 import fsp from "node:fs/promises";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -45,6 +46,8 @@ export type CheckOptions = {
   deep?: boolean;
   home?: string;
   root?: string;
+  /** The mailboxes set up, so a Bridge that is not running is reported rather than silent. */
+  mailHosts?: { host: string; port: number }[];
 };
 
 export async function check(opts: CheckOptions = {}): Promise<Report> {
@@ -106,6 +109,21 @@ export async function check(opts: CheckOptions = {}): Promise<Report> {
       "no Proton Drive sync folder under ~/Library/CloudStorage — copies are off",
     fix: "open Proton Drive.app and sign in; or KIKU_EXPORT_DIR=/a/folder to choose one",
   });
+
+  // Proton Mail Bridge is a menu-bar app on loopback; when it is quit, mail quietly stops. Say so.
+  for (const m of opts.mailHosts ?? []) {
+    if (!/^(127\.0\.0\.1|localhost|::1)$/.test(m.host)) continue;
+    const up = await portOpen(m.host, m.port);
+    checks.push({
+      name: "mail bridge",
+      ok: up,
+      level: "want",
+      detail: up
+        ? `${m.host}:${m.port} is answering`
+        : `nothing on ${m.host}:${m.port} — newsletters from that mailbox stop until it is back`,
+      fix: "open Proton Mail Bridge and sign in",
+    });
+  }
 
   const free = await freeBytes(home).catch(() => null);
   checks.push({
@@ -239,6 +257,23 @@ async function ollamaCheck(): Promise<Check> {
         detail: choice.reason,
         fix: choice.fix,
       };
+}
+
+export function portOpen(
+  host: string,
+  port: number,
+  ms = 1500,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const sock = net.connect({ host, port });
+    const done = (ok: boolean) => {
+      sock.destroy();
+      resolve(ok);
+    };
+    sock.setTimeout(ms, () => done(false));
+    sock.once("connect", () => done(true));
+    sock.once("error", () => done(false));
+  });
 }
 
 export async function freeBytes(dir: string): Promise<number> {

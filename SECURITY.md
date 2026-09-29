@@ -9,8 +9,12 @@ hole in it.
 - The links you paste. Each is fetched once, from your Mac, by `src/extract.ts`.
 - The files you drop. They are read on your Mac by `pdftotext`, `markitdown` or `textutil`.
 - The text you paste.
-- The feeds you subscribe to. Text feeds are fetched from your Mac every 30 minutes; a
-  podcast's episode list is fetched when you open the show.
+- The feeds and shows you subscribe to, fetched from your Mac every 30 minutes.
+- The mailboxes you set up, over IMAP from your Mac every 30 minutes: headers of every message
+  in the last thirty days, the full source of only those that carry a mailing-list header or
+  come from a known newsletter platform. Nothing else in the mailbox is fetched, and nothing is
+  ever written to it. Proton goes through the Bridge app on `127.0.0.1:1143`, whose certificate
+  is self-signed and is accepted only for that loopback address.
 - The output of `tailscale status` on your Mac, to learn your tailnet name if you have one.
 
 ## What it writes
@@ -23,8 +27,11 @@ Everything lives under `~/Kiku/`, or wherever `KIKU_HOME` points:
 | `text/*.txt`               | the cleaned paragraphs of each reading, one per line                 |
 | `library.json`             | title, author, source, duration and voice of each reading            |
 | `positions.json`           | where you stopped in each one                                        |
-| `podcasts.json`            | podcast subscriptions                                                |
-| `textfeeds.json`           | text-feed subscriptions and the Inbox                                |
+| `podcasts.json`            | show subscriptions and the episode ids already surfaced              |
+| `textfeeds.json`           | text-feed subscriptions and the Inbox, all three kinds               |
+| `accounts.json`            | mailboxes with their passwords, mode 0600, never sent back by the API|
+| `mail.json`                | a UID cursor per mailbox folder and the message ids already taken    |
+| `mail/*.html`              | each newsletter, cleaned: no scripts, styles, images or trackers     |
 | `public-token`             | the secret for the public feed link, mode 0600                       |
 
 Outside that folder: a WAV file in the system temp directory while a reading is being encoded,
@@ -37,9 +44,14 @@ token.
 
 ## What goes over the network
 
-Outbound, from your Mac: the links you gave it, the feeds you subscribed to, and one download
-of the Kokoro model from Hugging Face (`mlx-community/Kokoro-82M-bf16`) the first time it
-speaks. Nothing else. There is no cloud speech, no API key anywhere in the code, no telemetry,
+Outbound, from your Mac: the links you gave it, the feeds and shows you subscribed to, the
+mailboxes you set up, and one download of the Kokoro model from Hugging Face
+(`mlx-community/Kokoro-82M-bf16`) the first time it speaks, with the hub's telemetry switched
+off. Nothing else. A publisher whose feed you poll sees a fetch from your address every 30
+minutes, as it would from any reader; it does not learn that you read anything, because the
+open-tracking pixel in a letter is dropped before the letter is stored and a click tracker is
+reduced to its text. A mailbox provider sees what it always saw — your mail — so a provider
+that cannot read it (Proton, or your own server) keeps the claim whole where Gmail does not. There is no cloud speech, no API key anywhere in the code, no telemetry,
 no analytics and no error reporting. The page requests nothing from any other host: the fonts
 are six `.woff2` files in `assets/fonts/` served by kiku itself. `src/ui.ts` and `src/server.ts`
 are the places to verify this.

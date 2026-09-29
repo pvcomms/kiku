@@ -6,6 +6,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { decodeEntities } from "./clean.ts";
+import { cleanUrl } from "./hygiene.ts";
 import { tag, attrFrom, stripTags, hashId } from "./podcasts.ts";
 
 export type TextFeed = {
@@ -19,18 +20,39 @@ export type TextFeed = {
   seen: string[]; // recent guids, capped — keeps rediscovered items from re-entering the inbox
 };
 
+/**
+ * Where an inbox item came from. `feed` is a text feed (no audio of its own — Listen runs the
+ * pipeline). `show` is a podcast episode (Listen plays the enclosure). `mail` is a newsletter
+ * pulled from the mailbox (its cleaned HTML is on disk; Listen runs the pipeline on that file).
+ * Absent on items written before there were three kinds, which were all feeds.
+ */
+export type Source = "feed" | "show" | "mail";
+
 export type InboxItem = {
   id: string;
-  feedId: string;
+  source?: Source;
+  feedId: string; // the feed, show or mail account it came from
   feedTitle: string;
   title: string;
   link: string;
   pubDate: string; // ISO
   summary?: string;
+  // show
+  enclosureUrl?: string;
+  seconds?: number;
+  artworkUrl?: string;
+  // mail
+  mailFile?: string; // basename inside ~/Kiku/mail/
+  from?: string; // sender name
 };
 
+export function sourceOf(item: InboxItem): Source {
+  return item.source ?? "feed";
+}
+
 const SEEN_CAP = 600;
-const INBOX_CAP = 500;
+/** The only automatic forgetting: nothing else leaves the inbox except by a verb. */
+const INBOX_CAP = 2000;
 
 type Store = { feeds: TextFeed[]; inbox: InboxItem[] };
 
@@ -90,6 +112,27 @@ export class TextFeeds {
     return true;
   }
 
+  /** Unsubscribing from a show or removing a mailbox takes its waiting items with it. */
+  removeBySource(feedId: string): Promise<void> {
+    return this.mutate((s) => {
+      s.inbox = s.inbox.filter((i) => i.feedId !== feedId);
+    });
+  }
+
+  /** Items from shows and mail arrive already deduplicated by their own stores. */
+  addToInbox(items: InboxItem[]): Promise<void> {
+    if (items.length === 0) return Promise.resolve();
+    return this.mutate((s) => {
+      const have = new Set(s.inbox.map((i) => i.id));
+      for (const it of items) {
+        if (have.has(it.id)) continue;
+        have.add(it.id);
+        s.inbox.push(it);
+      }
+      trim(s);
+    });
+  }
+
   async removeFromInbox(id: string): Promise<InboxItem | undefined> {
     const item = this.store.inbox.find((i) => i.id === id);
     if (!item) return undefined;
@@ -123,10 +166,12 @@ export class TextFeeds {
         seen.add(a.guid);
         const item: InboxItem = {
           id: hashId("inbox", feedId + a.guid),
+          source: "feed",
           feedId,
           feedTitle: feed.title,
           title: a.title,
-          link: a.link,
+          // A feed's own link may still carry the reader's utm tag; it never carries a redirect.
+          link: cleanUrl(a.link) ?? a.link,
           pubDate: a.pubDate,
           summary: a.summary,
         };
@@ -134,10 +179,7 @@ export class TextFeeds {
         s.inbox.push(item);
       }
       feed.seen = [...seen].slice(-SEEN_CAP);
-      if (s.inbox.length > INBOX_CAP) {
-        s.inbox.sort((a, b) => (a.pubDate < b.pubDate ? 1 : -1));
-        s.inbox.length = INBOX_CAP;
-      }
+      trim(s);
     }).then(() => added);
   }
 
@@ -150,6 +192,13 @@ export class TextFeeds {
     });
     this.chain = next.catch(() => {});
     return next;
+  }
+}
+
+function trim(s: Store): void {
+  if (s.inbox.length > INBOX_CAP) {
+    s.inbox.sort((a, b) => (a.pubDate < b.pubDate ? 1 : -1));
+    s.inbox.length = INBOX_CAP;
   }
 }
 
@@ -242,6 +291,18 @@ function isoDate(raw: string | undefined): string {
     if (!Number.isNaN(t)) return new Date(t).toISOString();
   }
   return new Date().toISOString();
+}
+
+/** The feed URLs in an OPML file, in document order, without duplicates. */
+export function opmlUrls(opml: string): string[] {
+  const out: string[] = [];
+  const re = /<outline\b[^>]*\bxmlUrl\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(opml))) {
+    const u = decodeEntities(m[1] ?? m[2] ?? "").trim();
+    if (/^https?:\/\//i.test(u) && !out.includes(u)) out.push(u);
+  }
+  return out;
 }
 
 /** Run `fn` over `items` with at most `limit` in flight at once. */

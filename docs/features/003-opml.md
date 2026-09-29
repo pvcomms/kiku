@@ -62,3 +62,7 @@ curl -s -X POST -H 'content-type: text/xml' --data-binary @some.opml \
 
 `attrFrom` and `tag` in `src/podcasts.ts` already parse attributes out of feed XML without a
 DOM; use them rather than adding an XML dependency. Escape `&`, `<` and `"` in `toOpml`.
+
+## Note — 2026-09-30
+
+Import landed in [010](010-conduit.md): `POST /api/feeds/import` takes `opml` and the Sources section takes the file. Export is what remains of this spec.

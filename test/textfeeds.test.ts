@@ -7,6 +7,8 @@ import {
   TextFeeds,
   parseArticleFeed,
   mapLimit,
+  opmlUrls,
+  sourceOf,
   type TextFeed,
 } from "../src/textfeeds.ts";
 
@@ -186,3 +188,42 @@ test("state survives a reload from disk", () =>
     assert.equal(reloaded.listFeeds().length, 1);
     assert.equal(reloaded.listInbox().length, 1);
   }));
+
+test("opmlUrls lifts every xmlUrl once, in order, entities decoded", () => {
+  const opml = `<?xml version="1.0"?><opml version="2.0"><body>
+    <outline text="AI"><outline type="rss" text="Zvi" xmlUrl="https://thezvi.substack.com/feed" htmlUrl="https://thezvi.substack.com"/></outline>
+    <outline type='rss' text='Politico' xmlUrl='https://rss.politico.com/politics-news.xml?a=1&amp;b=2'/>
+    <outline type="rss" text="dup" xmlUrl="https://thezvi.substack.com/feed"/>
+    <outline text="folder only"/>
+  </body></opml>`;
+  assert.deepEqual(opmlUrls(opml), [
+    "https://thezvi.substack.com/feed",
+    "https://rss.politico.com/politics-news.xml?a=1&b=2",
+  ]);
+});
+
+test("addToInbox and removeBySource: items from shows and mail share the inbox", async () => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), "kiku-inbox-"));
+  const tf = new TextFeeds(home);
+  await tf.init();
+  const ep = { id: "inbox-ep1", source: "show" as const, feedId: "show1", feedTitle: "A show", title: "Ep 1", link: "", pubDate: "2026-09-30T00:00:00.000Z", enclosureUrl: "https://x/ep1.mp3" };
+  const letter = { id: "inbox-m1", source: "mail" as const, feedId: "mail:proton", feedTitle: "Zvi", title: "AI #100", link: "", pubDate: "2026-09-29T00:00:00.000Z", mailFile: "mail-abc.html" };
+  await tf.addToInbox([ep, letter, ep]);
+  assert.equal(tf.listInbox().length, 2);
+  assert.equal(tf.listInbox()[0].id, "inbox-ep1");
+  await tf.removeBySource("show1");
+  assert.deepEqual(tf.listInbox().map((i) => i.id), ["inbox-m1"]);
+  assert.equal(sourceOf(tf.listInbox()[0]), "mail");
+  assert.equal(sourceOf({ ...letter, source: undefined }), "feed");
+});
+
+test("applyPoll cleans a feed link of its tracking parameters", async () => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), "kiku-clean-"));
+  const tf = new TextFeeds(home);
+  await tf.init();
+  const feed: TextFeed = { id: "f1", title: "F", feedUrl: "https://f/feed", addedAt: "2026-09-01T00:00:00.000Z", seen: [] };
+  await tf.addFeed(feed);
+  const added = await tf.applyPoll("f1", [{ guid: "g1", title: "T", link: "https://f/post?utm_source=rss&utm_medium=feed", pubDate: "2026-09-30T00:00:00.000Z" }]);
+  assert.equal(added[0].link, "https://f/post");
+  assert.equal(added[0].source, "feed");
+});

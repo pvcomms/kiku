@@ -7,6 +7,8 @@ type PageProps = {
   hosts: string[];
   /** No sources yet: show the setup page instead of the inbox. */
   setup: boolean;
+  /** A local model is available to draw with. When it is not, the page hides `see`. */
+  see: boolean;
 };
 
 const esc = (s: string) =>
@@ -76,6 +78,7 @@ export function page({
   defaultVoice,
   hosts,
   setup,
+  see,
 }: PageProps): string {
   const voiceOptions = voices
     .map(
@@ -206,7 +209,7 @@ export function page({
   ${phone}`;
 
   return `<!doctype html>
-<html lang="en">
+<html lang="en" data-see="${see ? "on" : "off"}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -311,6 +314,7 @@ export function page({
   .icon:hover { color: var(--ink); background: var(--paper-3); }
   .icon svg { width: 16px; height: 16px; }
   .icon[hidden] { display: none; }
+  html[data-see="off"] [data-mode="see"], html[data-see="off"] .icon.see { display: none; }
 
   .feedbox { border: 1px solid var(--line); border-radius: 10px; background: var(--paper-2); padding: 16px; }
   .feedbox p { margin: 0 0 10px; color: var(--ink-2); font-size: 15px; }
@@ -601,6 +605,9 @@ export function page({
     let report = null;
     try { report = await (await fetch('/health')).json(); } catch { return; }
     const bad = (report.checks || []).filter((c) => !c.ok);
+    const model = (report.checks || []).find((c) => c.name === 'ollama');
+    document.documentElement.dataset.see = model && model.ok ? 'on' : 'off';
+    if (model && !model.ok && $('#mode') && $('#mode').value === 'see') setMode('listen');
     const box = $('#ready');
     box.hidden = bad.length === 0;
     // Something a reading needs is in the accent; something only one half uses stays quiet.

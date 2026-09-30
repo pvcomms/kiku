@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- A template, not a plist to load as is. bin/install-launchd fills __HOME__, __REPO__ and
-     __NODE__ for this machine, writes ~/Library/LaunchAgents/com.param.kiku.plist and loads it. -->
+<!-- A template, not a plist to load as is. bin/install-launchd fills __HOME__, __REPO__, __NODE__
+     and __HOST__ for this machine, writes ~/Library/LaunchAgents/com.param.kiku.plist and loads it. -->
 <plist version="1.0">
 <dict>
   <key>Label</key><string>com.param.kiku</string>
@@ -16,6 +16,7 @@
     <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>HOME</key><string>__HOME__</string>
     <key>KIKU_PORT</key><string>4747</string>
+    <key>KIKU_HOST</key><string>__HOST__</string>
     <key>KIKU_HOME</key><string>__HOME__/Kiku</string>
   </dict>
   <key>RunAtLoad</key><true/>

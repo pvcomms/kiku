@@ -1,6 +1,6 @@
 # The Python half of kiku: the environment bin/tts.py runs in. src/tts.ts spawns
-# `.venv/bin/python bin/tts.py`, so the environment must be `.venv` at the repo root.
-# Build it with bin/setup-python.sh. Rebuild it rather than editing it.
+# `$KIKU_VENV/bin/python bin/tts.py`, and KIKU_VENV defaults to `.venv` at the repo root.
+# Build it with bin/setup-python.sh (or `kiku --setup`). Rebuild it rather than editing it.
 # Pinned to the versions the reference machine runs (2026-09-19).
 [project]
 name = "kiku-tts"

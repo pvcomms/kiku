@@ -1,0 +1,13 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "kiku-scratch",
+      "url": "http://localhost:4749"
+    },
+    {
+      "name": "kiku",
+      "url": "http://localhost:4747"
+    }
+  ]
+}

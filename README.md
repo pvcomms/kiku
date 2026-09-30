@@ -1,4 +1,4 @@
-# kiku · 聞く
+# kiku
 
 Everything you subscribe to — the feeds, the newsletters, the podcasts — arrives in one inbox on your Mac, and nothing else does. Each item waits for one of four verbs: **listen**, and Kokoro reads it aloud into a private podcast episode for your phone; **see**, and a local model reads it into three or five overlapping sets drawn as one interactive page; **read**, and the cleaned text is set on a page; or **dismiss**. Nothing ranks, recommends, or plays next. Nothing leaves the machine: no API keys, no cloud voices, no cloud models, no font requests, no analytics, and no tracking pixel ever fires. It runs at home and on a laptop with no network. You can still paste a link, a file or the words themselves.
 

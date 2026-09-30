@@ -60,7 +60,6 @@ const BASE_CSS = `
   header { display: flex; align-items: baseline; justify-content: space-between; padding: 40px 0 8px; }
   .wordmark { font-family: var(--display); font-size: 48px; letter-spacing: -0.02em; line-height: 1; margin: 0; font-weight: 400; }
   .wordmark a { text-decoration: none; }
-  .wordmark span { color: var(--ink-3); font-weight: 400; font-size: 22px; margin-left: 10px; letter-spacing: 0; font-family: var(--sans); }
   footer { padding: 56px 0 20px; font: 12px/1.6 var(--mono); color: var(--ink-3); }
 `;
 
@@ -363,7 +362,7 @@ export function page({
 <body>
 <main>
   <header class="rise">
-    <h1 class="wordmark"><a href="/">kiku</a> <span>聞く</span></h1>
+    <h1 class="wordmark"><a href="/">kiku</a></h1>
     <span class="status" id="status"><i></i><span id="statusText">${setup ? "setup" : "studio"}</span></span>
   </header>
   ${body}

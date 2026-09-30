@@ -61,15 +61,30 @@ lsof -nP -iTCP:4790 -sTCP:LISTEN | awk 'NR>1{print $9}'      # 127.0.0.1:4790
 curl -s http://127.0.0.1:4790/ | grep -o '<html[^>]*>'       # <html lang="en" data-see="off">
 ```
 
-The tap installs from a clean prefix and runs (from `~/personal/tools/apps/homebrew-tap`, with a
-scratch tap whose `head` points at a local clone):
+The formula is clean under Homebrew's own checks, run on a scratch tap whose `head` points at a
+local clone:
 
 ```bash
-brew install --HEAD local/kikutest/kiku
-kiku --doctor --quick                   # exits 1 before setup: "no speech environment at …/Application Support/Kiku/venv"
-KIKU_VENV=$(mktemp -d)/venv kiku --setup   # builds the venv, caches the voice (already cached here), doctor ends "ready"
-brew test local/kikutest/kiku
-brew uninstall kiku && brew untap local/kikutest
+brew tap-new local/kikutest --no-git    # then copy Formula/kiku.rb in, head → file:///…/kiku
+brew style local/kikutest/kiku          # no offenses
+brew audit --strict --formula local/kikutest/kiku    # silent, exit 0
+brew install --HEAD --dry-run local/kikutest/kiku   # resolves; would install pnpm and 10 others, upgrade 45
+```
+
+Its steps run outside Homebrew, in a scratch directory (`git clone`, `pnpm install
+--frozen-lockfile --prod --config.node-linker=hoisted`, copy to a `libexec`, the same wrapper):
+
+```bash
+HOME=$(mktemp -d) ./bin/kiku --doctor --quick    # exit 1: "no speech environment at …/Application Support/Kiku/venv"
+KIKU_VENV=$S/venv ./bin/kiku --setup             # builds the venv, doctor ends "ready: everything a reading needs is here."
+KIKU_VENV=$S/venv KIKU_PORT=4790 ./bin/kiku --serve    # 127.0.0.1:4790 only; /health ok; a pasted-text reading finishes, 0:11
+```
+
+Still to run, by the owner, because a real `brew install` upgrades 45 dependencies on this Mac
+(node and ffmpeg among them) and would try to link a Homebrew `pnpm` over the npm one:
+
+```bash
+brew install --HEAD pvcomms/tap/kiku && brew test kiku
 ```
 
 ## Not done here

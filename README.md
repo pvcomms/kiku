@@ -32,7 +32,7 @@ brew services start kiku                # keep it running across logins
 open http://localhost:4747
 ```
 
-The formula brings Node, uv, ffmpeg, poppler and markitdown. It does not build the Python environment or download the voice at install time: `kiku --setup` does, into `~/Library/Application Support/Kiku/venv` and `~/.cache/huggingface`, so the install itself is quick and the code under Homebrew stays read-only. Drawing is optional and needs Ollama (`brew install ollama && ollama pull qwen2.5:7b`); without it the page has no _see_ button and listening and reading work as usual. Apple silicon only. The tap lives in [pvcomms/homebrew-tap](https://github.com/pvcomms/homebrew-tap).
+The formula brings Node, uv, ffmpeg and poppler. It does not build the Python environment, install markitdown (a Python tool, not a Homebrew formula) or download the voice at install time: `kiku --setup` does, into `~/Library/Application Support/Kiku/venv` and `~/.cache/huggingface`, so the install itself is quick and the code under Homebrew stays read-only. Drawing is optional and needs Ollama (`brew install ollama && ollama pull qwen2.5:7b`); without it the page has no _see_ button and listening and reading work as usual. Apple silicon only. The tap lives in [pvcomms/homebrew-tap](https://github.com/pvcomms/homebrew-tap).
 
 To work on kiku itself, or to run it from a clone, use the steps below.
 

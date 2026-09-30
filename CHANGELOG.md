@@ -33,6 +33,12 @@ the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   each URL becomes a show or a text feed by what it contains, or by what the person says.
 - `POST /api/jobs` takes `mode: "read"`; `bin/kiku` gains nothing new, the page does.
 
+### Fixed
+
+- `bin/doctor`, `bin/setup-road` and the docs told a fresh Mac to `brew install markitdown`,
+  which is not a Homebrew formula. markitdown now comes from `uv tool install` in
+  `bin/setup-python.sh`, and the launchd template puts `~/.local/bin` on the agent's PATH.
+
 ### Changed
 
 - The page answers on loopback by default (`KIKU_HOST` unset means `127.0.0.1`, not `0.0.0.0`),

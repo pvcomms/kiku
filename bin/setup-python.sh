@@ -23,3 +23,8 @@ spacy.load("en_core_web_sm")
 print("en_core_web_sm", m.version("en_core_web_sm"))
 print("ok: the speech environment is ready")
 PY
+
+# markitdown reads EPUB and is the PDF fallback. It is a Python tool, not a Homebrew formula,
+# so uv installs it (into ~/.local/bin, which the launchd template and the Homebrew wrapper both
+# put on the PATH).
+command -v markitdown >/dev/null 2>&1 || uv tool install "markitdown[all]"

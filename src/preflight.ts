@@ -97,7 +97,7 @@ export async function check(opts: CheckOptions = {}): Promise<Report> {
     ok: weights !== null,
     level: "need",
     detail: weights ?? `${KOKORO_REPO} is not in the Hugging Face cache`,
-    fix: `bin/kiku "warming the voice up"  # once, online, to cache the weights`,
+    fix: "kiku --setup  # once, online: builds the speech environment if needed and caches the weights",
   });
 
   checks.push(await ollamaCheck());

@@ -6,7 +6,11 @@
 #   kiku --see <url|file|"text">           draw it as a set diagram instead (3 sets; --see5 for five)
 #   kiku                                   show the library and feed address
 #   kiku --open                            open the page
+#   kiku --serve                           run the server in this terminal
+#   kiku --setup                           build the speech environment and fetch the voice, once
+#   kiku --doctor                          what this machine has, and what it is missing
 set -e
+ROOT="${0:A:h:h}"
 PORT="${KIKU_PORT:-4747}"
 BASE="http://127.0.0.1:${PORT}"
 MODE=listen; SETS=3
@@ -15,8 +19,15 @@ case "${1:-}" in
   --see5) MODE=see; SETS=5; shift ;;
 esac
 
+case "${1:-}" in
+  --serve) cd "$ROOT" && exec node src/server.ts ;;
+  --setup) cd "$ROOT" && bin/setup-python.sh && bin/warm-voice && exec bin/doctor ;;
+  --doctor) shift; exec "$ROOT/bin/doctor" "$@" ;;
+esac
+
 if ! curl -sf "$BASE/health" >/dev/null 2>&1; then
-  echo "kiku: server is not running on :$PORT. Start it with: launchctl kickstart -k gui/$(id -u)/com.param.kiku" >&2
+  echo "kiku: server is not running on :$PORT. Start it with: kiku --serve" >&2
+  echo "      to keep it running: brew services start kiku (Homebrew), or bin/install-launchd (a clone)" >&2
   exit 1
 fi
 

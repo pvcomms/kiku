@@ -78,13 +78,14 @@ import {
   type TextFeed,
 } from "./textfeeds.ts";
 import { page, readPage } from "./ui.ts";
+import { isLoopback, listenHost } from "./config.ts";
 
 const PORT = Number(process.env.KIKU_PORT ?? 4747);
-// Which interface to answer on. The default stays 0.0.0.0 so a home network
-// keeps working unchanged. Set KIKU_HOST=127.0.0.1 when the network is not
-// yours — a rented flat, a hotel, a cafe — and reach the page over the tailnet
-// instead: `tailscale serve --bg 4747` already proxies it.
-const HOST = process.env.KIKU_HOST ?? "0.0.0.0";
+// Which interface to answer on: loopback unless KIKU_HOST says otherwise, so a fresh install
+// is reachable from this machine and nothing else. KIKU_HOST=0.0.0.0 opens it to a home
+// network you trust (the phone reads /feed.xml over Wi-Fi); on any other network leave it
+// alone and reach the page over the tailnet: `tailscale serve --bg 4747` already proxies it.
+const HOST = listenHost();
 const HOME = process.env.KIKU_HOME ?? path.join(os.homedir(), "Kiku");
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const COVER = path.join(ROOT, "assets", "cover.png");
@@ -651,15 +652,27 @@ function lanAddresses(): string[] {
 
 let tailnetOrigin: string | null = null;
 
-/** Origins the phone can use: LAN name, LAN IP, and the tailnet HTTPS name when Tailscale is up. */
+/**
+ * Origins that reach this page: the tailnet HTTPS name when Tailscale is up, then this machine
+ * (loopback) or, when the page answers on the network, its LAN name and addresses. A LAN name
+ * is only listed when something is listening there, so a loopback install never advertises
+ * an address that would refuse the phone.
+ */
 function hostList(): string[] {
   const name = os.hostname().toLowerCase();
-  const lan = [
-    name.endsWith(".local") ? name : `${name}.local`,
-    ...lanAddresses(),
-  ].map((h) => `http://${h}:${PORT}`);
-  const all = tailnetOrigin ? [tailnetOrigin, ...lan] : lan;
+  const own = isLoopback(HOST)
+    ? [`http://localhost:${PORT}`]
+    : [name.endsWith(".local") ? name : `${name}.local`, ...lanAddresses()].map(
+        (h) => `http://${h}:${PORT}`,
+      );
+  const all = tailnetOrigin ? [tailnetOrigin, ...own] : own;
   return [...new Set(all)];
+}
+
+/** Drawing needs a local model. Without Ollama and a model that fits, the page hides `see`. */
+async function canSee(): Promise<boolean> {
+  const models = await installed(800).catch(() => null);
+  return models !== null && chooseModel(models).ok;
 }
 
 async function detectTailnet(): Promise<void> {
@@ -740,7 +753,7 @@ function baseOf(c: {
   return `${proto}://${host}`;
 }
 
-app.get("/", (c) =>
+app.get("/", async (c) =>
   c.html(
     page({
       voices: VOICES,
@@ -748,6 +761,7 @@ app.get("/", (c) =>
       hosts: hostList(),
       // With nothing subscribed the page is the setup page. `?setup=1` shows it again any time.
       setup: sourceCount() === 0 || c.req.query("setup") === "1",
+      see: await canSee(),
     }),
   ),
 );

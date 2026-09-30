@@ -21,7 +21,20 @@ It reads the links you paste, the files you drop, the text you type, the feeds a
 
 Outside that folder: `~/Library/Logs/kiku.log` when it runs under launchd; the Kokoro weights, about 340 MB, in `~/.cache/huggingface/hub/`, downloaded once on the first reading; and, if the Proton Drive app is signed in, a copy of every reading and drawing in `<Proton Drive>/Kiku/Audio/` and `Kiku/Artifacts/` (`KIKU_EXPORT_DIR` chooses another folder; no folder means no copies, and nothing else changes).
 
-Everything else stays on the machine. The only outbound requests are the links, feeds and mailbox you gave it and that one model download: no cloud voices, no cloud models, no API keys, no analytics, no fonts from a CDN. Drawing talks to Ollama on `127.0.0.1` and to nothing else. The page and the feed are served to your home network with no login, so your Wi-Fi is the trust boundary. [SECURITY.md](SECURITY.md) has the whole model, including what the public feed link exposes if you turn it on.
+Everything else stays on the machine. The only outbound requests are the links, feeds and mailbox you gave it and that one model download: no cloud voices, no cloud models, no API keys, no analytics, no fonts from a CDN. Drawing talks to Ollama on `127.0.0.1` and to nothing else. The page and the feed answer on the Mac they run on and nowhere else, until you set `KIKU_HOST=0.0.0.0` (or install with `bin/install-launchd --lan`); after that they are served to your home network with no login, so your Wi-Fi is the trust boundary. [SECURITY.md](SECURITY.md) has the whole model, including what the public feed link exposes if you turn it on.
+
+## Install with Homebrew
+
+```bash
+brew install --HEAD pvcomms/tap/kiku    # until the first tagged release; then: brew install pvcomms/tap/kiku
+kiku --setup                            # once: builds the speech environment and fetches the voice, about 1.5 GB
+brew services start kiku                # keep it running across logins
+open http://localhost:4747
+```
+
+The formula brings Node, uv, ffmpeg, poppler and markitdown. It does not build the Python environment or download the voice at install time: `kiku --setup` does, into `~/Library/Application Support/Kiku/venv` and `~/.cache/huggingface`, so the install itself is quick and the code under Homebrew stays read-only. Drawing is optional and needs Ollama (`brew install ollama && ollama pull qwen2.5:7b`); without it the page has no _see_ button and listening and reading work as usual. Apple silicon only. The tap lives in [pvcomms/homebrew-tap](https://github.com/pvcomms/homebrew-tap).
+
+To work on kiku itself, or to run it from a clone, use the steps below.
 
 ## Prerequisites
 
@@ -49,12 +62,13 @@ bin/setup-python.sh          # .venv from pyproject.toml; Apple silicon only
 node bin/vendor-venn.mjs     # only if you change the venn template; assets/venn.html is committed
 ```
 
-Open `http://<your-mac>.local:4747`. The server prints its own addresses when it starts, and the page shows them under the feed address. Follow `http://<your-mac>.local:4747/feed.xml` in any podcast player on the network. The first reading downloads the Kokoro weights; after that the speech step is offline.
+Open `http://localhost:4747`. The page answers on this Mac only. To read from a phone or an iPad on your home network, start it with `KIKU_HOST=0.0.0.0 pnpm start` (or install the agent with `--lan`, below); the server then prints its LAN addresses and the page shows them under the feed address, and any podcast player on the network can follow `http://<your-mac>.local:4747/feed.xml`. The first reading downloads the Kokoro weights; after that the speech step is offline.
 
 To keep it running across logins and crashes, install it as a launchd agent:
 
 ```bash
 bin/install-launchd                                    # renders launchd/com.param.kiku.plist.template for this machine and loads it
+bin/install-launchd --lan                              # the same, answering on the home network (KIKU_HOST=0.0.0.0)
 bin/install-launchd --print                            # show what would be installed, install nothing
 launchctl kickstart -k gui/$(id -u)/com.param.kiku    # restart
 tail -f ~/Library/Logs/kiku.log                        # watch
@@ -62,7 +76,7 @@ tail -f ~/Library/Logs/kiku.log                        # watch
 
 Run it by hand (`pnpm start`) only with the agent stopped; two instances cannot share a port. `KIKU_HOME` and `KIKU_PORT` run a second instance beside the first.
 
-The Python side lives in `.venv` at the repo root, because `src/tts.ts` spawns `.venv/bin/python bin/tts.py` from there. `pyproject.toml` pins what goes in it (`mlx-audio`, `misaki[en]`, `soundfile`, `numpy`, the `en_core_web_sm` spaCy pipeline) and `bin/setup-python.sh` builds it; rebuild it rather than editing it. The Kokoro weights cache in `~/.cache/huggingface/hub/models--mlx-community--Kokoro-82M-bf16`.
+The Python side lives in `.venv` at the repo root, because `src/tts.ts` spawns `.venv/bin/python bin/tts.py` from there; `KIKU_VENV` moves it (the Homebrew install points it at `~/Library/Application Support/Kiku/venv`). `pyproject.toml` pins what goes in it (`mlx-audio`, `misaki[en]`, `soundfile`, `numpy`, the `en_core_web_sm` spaCy pipeline) and `bin/setup-python.sh` builds it; rebuild it rather than editing it. The Kokoro weights cache in `~/.cache/huggingface/hub/models--mlx-community--Kokoro-82M-bf16`.
 
 ## Use it
 
@@ -139,7 +153,7 @@ Kokoro grades its own voices; the page offers the good ones: Heart (default), Be
 
 ## Away from home
 
-Everything binds to the home network. To use it anywhere, log into Tailscale on the Mac (menu bar app) and on the phone (App Store app), then:
+By default nothing answers off this Mac, and `kiku-remote` needs nothing more: it proxies the loopback address. To use it anywhere, log into Tailscale on the Mac (menu bar app) and on the phone (App Store app), then:
 
 ```bash
 kiku-remote

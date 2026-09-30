@@ -4,10 +4,11 @@ import { promisify } from "node:util";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { kokoroSnapshot } from "./preflight.ts";
+import { venvPython } from "./config.ts";
 
 const run = promisify(execFile);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-export const PYTHON = path.join(ROOT, ".venv", "bin", "python");
+export const PYTHON = venvPython(ROOT);
 const DRIVER = path.join(ROOT, "bin", "tts.py");
 
 export type Voice = { id: string; name: string; note: string };

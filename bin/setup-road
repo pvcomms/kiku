@@ -47,17 +47,7 @@ else
 fi
 
 say "5  Kokoro weights"
-SNAP="${HF_HUB_CACHE:-${HF_HOME:-$HOME/.cache/huggingface}/hub}/models--mlx-community--Kokoro-82M-bf16/snapshots"
-if ls "$SNAP"/*/*.safetensors >/dev/null 2>&1; then
-  echo "   cached"
-else
-  echo "   first reading, to download them"
-  T=$(mktemp -d /tmp/kiku-warm.XXXXXX)
-  printf 'The voice is ready.\n' > "$T/in.txt"
-  HF_HUB_OFFLINE=0 .venv/bin/python bin/tts.py --in "$T/in.txt" --out "$T/out.wav" --voice af_heart --speed 1 --lang a >/dev/null
-  ls "$SNAP"/*/*.safetensors >/dev/null 2>&1 || { echo "setup-road: the weights did not land in $SNAP" >&2; exit 1; }
-  echo "   cached"
-fi
+bin/warm-voice
 
 say "6  Server"
 bin/install-launchd

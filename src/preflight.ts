@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { chooseModel, gb, installed } from "./ollama.ts";
 import { resolveExportDir } from "./export.ts";
+import { venvDir, venvPython } from "./config.ts";
 
 const run = promisify(execFile);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -76,14 +77,16 @@ export async function check(opts: CheckOptions = {}): Promise<Report> {
     });
   }
 
-  const python = path.join(root, ".venv", "bin", "python");
+  const python = venvPython(root);
   const hasVenv = isExecutable(python);
   checks.push({
     name: "speech venv",
     ok: hasVenv,
     level: "need",
-    detail: hasVenv ? python : "no .venv at the repo root",
-    fix: "bin/setup-python.sh",
+    detail: hasVenv ? python : `no speech environment at ${venvDir(root)}`,
+    fix: process.env.KIKU_VENV
+      ? "kiku --setup"
+      : "bin/setup-python.sh  # or, on a Homebrew install: kiku --setup",
   });
 
   if (opts.deep && hasVenv) checks.push(await importsSpeechStack(python));
@@ -238,8 +241,9 @@ async function ollamaCheck(): Promise<Check> {
       name: "ollama",
       ok: false,
       level: "want",
-      detail: "not reachable on 127.0.0.1:11434 — only the see half needs it",
-      fix: "brew services start ollama  # or: ollama serve",
+      detail:
+        "drawing is off — it needs Ollama, which is optional; listening and reading do not",
+      fix: "brew install ollama && brew services start ollama && ollama pull qwen2.5:7b",
     };
   }
   const choice = chooseModel(models);

@@ -30,7 +30,7 @@ directly strips types without checking them; do not read its green as proof.
 Fonts are `.woff2` files in `assets/fonts/`. The voice model runs locally on Apple silicon.
 A feature that needs the network fetches _the thing the person asked for_ and nothing else.
 
-**Never deploy this.** It binds to the home network. Remote access is `tailscale serve` via
+**Never deploy this to a server.** It answers on loopback by default and on the home network only when `KIKU_HOST=0.0.0.0` is set. Remote access is `tailscale serve` via
 `bin/kiku-remote`, on a tailnet, with a real certificate. `bin/kiku-public` exists for
 players that crawl from a cloud and hands out a secret link — treat widening that surface as a
 security change, not a feature.
@@ -48,8 +48,8 @@ same discipline.
 
 ## Do not touch
 
-`~/Kiku/` contents by hand while the server is running. `.venv/` — it is the MLX environment,
-rebuilt not edited. `assets/fonts/` — self-hosted on purpose.
+`~/Kiku/` contents by hand while the server is running. `.venv/` (or wherever `KIKU_VENV` points) —
+it is the MLX environment, rebuilt not edited. `assets/fonts/` — self-hosted on purpose.
 
 ## Traps
 
@@ -65,7 +65,8 @@ look fine as text can sound broken. Listen before shipping anything that touches
 changes how existing long items would re-render, though already-generated audio is untouched.
 
 **`KIKU_HOME` and `KIKU_PORT`** are the seam for running a second instance. Hardcoding either
-breaks that.
+breaks that. `KIKU_HOST` and `KIKU_VENV` are the other two: never bind to `0.0.0.0` or assume
+`.venv` in the repo without going through `src/config.ts`.
 
 ---
 
@@ -85,7 +86,7 @@ Everything you subscribe to, in one local inbox; listen to it, see it or read it
 
 **How it relates to the whole.** Built because it was useful. Not an argument, and not CAPP's output.
 
-Siblings (tool, personal): `koe`, `yomu`.
+Siblings (tool, personal): `cognitive-scaffolding`, `koe`, `yomu`.
 
 The two trees are `~/work/capp/` (the Center) and `~/personal/` (everything else). `~/Code/` is a compatibility symlink farm — never build there.
 

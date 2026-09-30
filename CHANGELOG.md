@@ -7,6 +7,13 @@ the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A Homebrew tap (spec 011). `brew install --HEAD pvcomms/tap/kiku`, then `kiku --setup` once
+  for the speech environment and the voice, then `brew services start kiku`. New `bin/kiku`
+  flags `--serve`, `--setup` and `--doctor`, and `bin/warm-voice`, which `bin/setup-road` now
+  calls for the weights step.
+- `KIKU_VENV` moves the speech environment out of the repo, so code that lives read-only under
+  Homebrew can still run. `src/config.ts` holds it and the listen address.
+- `bin/install-launchd --lan` for an agent that answers on the home network.
 - The conduit (spec 010). One **Sources** section for three kinds — text feeds, shows and
   mailboxes — and one **Inbox** that all three feed, with four verbs on every item: **Listen**,
   **See**, **Read**, **Dismiss**. A new episode of a show is an inbox item whose Listen plays
@@ -27,6 +34,14 @@ the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `POST /api/jobs` takes `mode: "read"`; `bin/kiku` gains nothing new, the page does.
 
 ### Changed
+
+- The page answers on loopback by default (`KIKU_HOST` unset means `127.0.0.1`, not `0.0.0.0`),
+  and lists only addresses that can reach it. A phone on the home network needs
+  `KIKU_HOST=0.0.0.0` or `bin/install-launchd --lan`. An installed agent keeps whatever
+  `KIKU_HOST` its plist already sets.
+- Drawing is optional. Without Ollama and a model that fits, the page hides _see_ (the form
+  choice and the inbox button) instead of offering something that will fail; `bin/doctor` says
+  what is off and the command that turns it on.
 
 - A show subscribed now starts caught up, like a text feed: only episodes published after
   subscribing reach the inbox. Shows subscribed before this change are caught up on the first

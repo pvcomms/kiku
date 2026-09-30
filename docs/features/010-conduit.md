@@ -31,7 +31,7 @@ Decisions taken with the owner, recorded so nobody reopens them by accident:
   where the newsletters land. YouTube, Readwise, and anything needing speech-to-text wait.
 - **Apple silicon first.** The speech step stays as it is; [002](002-pluggable-speech.md) is
   the door for other machines and stays a separate piece of work.
-- **Install stays `git clone` + `bin/setup-road`.** No tap, no signed app, no container yet.
+- **Install stays `git clone` + `bin/setup-road`.** No tap, no signed app, no container yet. (The tap came later: [011](011-install-by-tap.md).)
 - **Yomu merges in.** The newsletter reader at `~/personal/tools/apps/yomu` (Next.js, IMAP
   through `imapflow`, SQLite) is retired. Its intake, detection and sanitising move into kiku
   as the third source. One stand, one inbox, one folder.

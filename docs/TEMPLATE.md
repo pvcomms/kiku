@@ -27,11 +27,13 @@ recommendation, nothing leaving the machine. A fork that adds a queue is a diffe
 
 ## Running it against your own life
 
+0. Or `brew install --HEAD pvcomms/tap/kiku`, then `kiku --setup`, and skip to step 3.
 1. Apple silicon Mac. `pnpm install`, then `bin/setup-python.sh` builds `.venv` from
    `pyproject.toml` (Kokoro-82M downloads on the first reading).
 2. `ffmpeg` on the PATH.
-3. `pnpm start`, open `http://<your-host>.local:4747`.
-4. Follow `http://<your-host>.local:4747/feed.xml` in any podcast player on the network.
+3. `pnpm start`, open `http://localhost:4747`. It answers on this Mac only.
+4. On a home network you trust, `KIKU_HOST=0.0.0.0 pnpm start`, then follow
+   `http://<your-host>.local:4747/feed.xml` in any podcast player on the network.
 5. Optional: `bin/kiku-remote` for a tailnet address that works on cellular.
 6. Optional: `app/build.sh` for the Mac wrapper, and `bin/install-launchd` to keep it running
    across logins and crashes.
@@ -42,7 +44,7 @@ recommendation, nothing leaving the machine. A fork that adds a queue is a diffe
 step has no backend and nothing else in the pipeline can compensate. Making the speech step
 pluggable is the single change that would make this genuinely portable, and it is unbuilt.
 
-The venv path is hardcoded to `.venv/bin/python` inside the repo.
+The venv is `.venv` in the repo unless `KIKU_VENV` moves it.
 
 `markitdown` and `pdftotext` are assumed present for file extraction; their absence fails at
 use time rather than at startup with a clear message.

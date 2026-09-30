@@ -23,6 +23,7 @@ kiku/
     jobs.ts        what a job is; ~/Kiku/jobs.json so an interrupted one comes back as an error
     extract.ts     url | file | text → { title, author, site, markdown }; chapter splitting
     clean.ts       markdown → prose Kokoro reads well. where audio quality lives
+    config.ts      where the page listens (KIKU_HOST, loopback by default) and where the speech venv is (KIKU_VENV)
     tts.ts         spawns the MLX driver, streams progress, encodes to mp3
     analyze.ts     markdown → the sets it is made of, via a local model; validate, repair once
     artifact.ts    sets → the venn template's config → one self-contained html file
@@ -37,7 +38,7 @@ kiku/
     mail/          accounts.ts (~/Kiku/accounts.json) · detect.ts (list headers) · sanitize.ts · sync.ts (IMAP)
     ui.ts          the page, served as a string: listen/see/read, player, inbox, library, sources, setup; readPage
   bin/
-    kiku           CLI; --see draws instead of reads
+    kiku           CLI; --see draws instead of reads; --serve, --setup, --doctor for a Homebrew install
     doctor         the readiness report from the shell; exit 1 when a reading cannot happen
     setup-road     a bare Mac → green doctor, idempotent
     mirror-ssd, restore-from-ssd   the stand to and from /Volumes/Go/kiku-road; nothing deleted
@@ -46,14 +47,15 @@ kiku/
     kiku-public    secret public link, for players that crawl from a cloud
     tts.py         the MLX driver, run inside .venv
     install-launchd  renders launchd/…plist.template for this machine and loads it
-    setup-python.sh  builds .venv from pyproject.toml
+    setup-python.sh  builds the speech venv ($KIKU_VENV, default .venv) from pyproject.toml
+    warm-voice       caches the Kokoro weights with one short reading; setup-road and `kiku --setup` call it
     shot.mjs         the README screenshot, from a second instance seeded with synthetic entries
   app/             Swift wrapper → /Applications/Kiku.app
   launchd/         com.param.kiku and com.param.ollama plist templates; bin/install-launchd and bin/setup-road fill them in
   shortcut/        the iOS Share Sheet shortcut, as a plist, for reference
   assets/          self-hosted fonts, cover art, icon; venn.html (generated) and venn.source.txt
   test/            clean, extract, textfeeds, preflight, jobs, export, analyze, artifact
-  pyproject.toml   the Python half, pinned; .venv is built from it and never edited
+  pyproject.toml   the Python half, pinned; the venv is built from it and never edited
 ```
 
 ## Data flow

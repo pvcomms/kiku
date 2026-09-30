@@ -1,6 +1,6 @@
 ---
 title: Install by tap — a fully local kiku that someone else can download
-status: building
+status: shipped
 created: 2026-09-30
 ---
 
@@ -80,15 +80,24 @@ KIKU_VENV=$S/venv ./bin/kiku --setup             # builds the venv, doctor ends 
 KIKU_VENV=$S/venv KIKU_PORT=4790 ./bin/kiku --serve    # 127.0.0.1:4790 only; /health ok; a pasted-text reading finishes, 0:11
 ```
 
-Still to run, by the owner, because a real `brew install` upgrades 45 dependencies on this Mac
-(node and ffmpeg among them) and would try to link a Homebrew `pnpm` over the npm one:
+Then on a clean Apple silicon runner (GitHub Actions, `macos-15`), from the tap's own workflow,
+run 36718056695 on 2026-09-30, every step green:
 
 ```bash
-brew install --HEAD pvcomms/tap/kiku && brew test kiku
+brew tap pvcomms/tap "$GITHUB_WORKSPACE"
+brew audit --strict --online pvcomms/tap/kiku
+brew install --HEAD --verbose pvcomms/tap/kiku
+brew test pvcomms/tap/kiku       # the formula's test: doctor exits 1 with "no speech environment", then serve answers /health
 ```
 
-## Not done here
+Not run: a `brew install` on the owner's own Mac. It would upgrade 45 outdated dependencies (node and
+ffmpeg among them) and install Homebrew's `pnpm` next to the npm-global one already linked in
+`/opt/homebrew/bin`, so `--ignore-dependencies` (which also drops node from the build PATH and
+fails at the pnpm step) is not a shortcut either. Run `brew upgrade` and remove the npm `pnpm`
+first, or install on another machine.
 
-Publishing. The tap is a local repo until the owner says to push `pvcomms/homebrew-tap`, and the
-formula's stable `url` and `sha256` land with the first tag of `pvcomms/kiku`. Until then the
-install is `brew install --HEAD`.
+## Published
+
+`pvcomms/kiku` (from `4fc48ba`) and `pvcomms/homebrew-tap` (public, `main`) on 2026-09-30. The
+formula's stable `url` and `sha256` still wait for the first tag of `pvcomms/kiku`; until then the
+install is `brew install --HEAD pvcomms/tap/kiku`.

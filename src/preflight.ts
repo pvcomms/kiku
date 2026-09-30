@@ -150,7 +150,11 @@ const BINARIES: [string, string, string][] = [
   ["ffmpeg", "encodes the mp3", "brew install ffmpeg"],
   ["ffprobe", "reads the finished duration", "brew install ffmpeg"],
   ["pdftotext", "reads PDFs", "brew install poppler"],
-  ["markitdown", "reads epub, docx and odt", "brew install markitdown"],
+  [
+    "markitdown",
+    "reads epub, docx and odt",
+    'uv tool install "markitdown[all]"  # a Python tool, not a Homebrew formula',
+  ],
 ];
 
 async function which(bin: string): Promise<string | null> {

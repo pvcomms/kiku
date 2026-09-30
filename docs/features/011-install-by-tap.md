@@ -30,9 +30,12 @@ on 2026-09-30.
    unchanged.
 4. **A tap.** `~/personal/tools/apps/homebrew-tap` is the source of `pvcomms/homebrew-tap`.
    `Formula/kiku.rb` installs the code and its production `node_modules` under `libexec`, depends
-   on `node`, `uv`, `ffmpeg`, `poppler` and `markitdown`, and offers `brew services`. It does
-   not build the Python environment or download the voice at install time; `kiku --setup`
+   on `node`, `uv`, `ffmpeg` and `poppler`, and offers `brew services`. It does not build the
+   Python environment, install `markitdown` or download the voice at install time; `kiku --setup`
    does, from the person's own shell, where the network and the disk are theirs to see.
+   (`markitdown` is not a Homebrew formula. `bin/doctor` and `bin/setup-road` used to say
+   `brew install markitdown`, which fails for anyone who has not made their own shim; both now
+   use `uv tool install "markitdown[all]"`, through `bin/setup-python.sh`.)
 5. **`bin/kiku` grows `--serve`, `--setup` and `--doctor`**, and the extracted `bin/warm-voice`
    is shared by `--setup` and `bin/setup-road`.
 

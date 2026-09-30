@@ -16,14 +16,14 @@ say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 command -v brew >/dev/null 2>&1 || { echo "setup-road: install Homebrew first: https://brew.sh" >&2; exit 1; }
 
 say "1  Homebrew formulae"
-for f in node pnpm uv ffmpeg poppler markitdown ollama; do
+for f in node pnpm uv ffmpeg poppler ollama; do
   if brew list --formula --versions "$f" >/dev/null 2>&1; then echo "   have $f"; else echo "   installing $f"; brew install "$f"; fi
 done
 
 say "2  Node dependencies"
 pnpm install --frozen-lockfile
 
-say "3  Speech environment"
+say "3  Speech environment and markitdown"
 bin/setup-python.sh
 
 say "4  Ollama"

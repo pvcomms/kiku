@@ -81,7 +81,7 @@ breaks that.
 | **Live** | — not deployed |
 | **Surface** | local-only, LAN |
 
-聞く — paste a link, a file or the words themselves; hear it, on your own machine.
+Everything you subscribe to, in one local inbox; listen to it, see it or read it, on your own machine.
 
 **How it relates to the whole.** Built because it was useful. Not an argument, and not CAPP's output.
 

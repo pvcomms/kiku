@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "聞く — paste a link, file, or text; listen on any device on your network.",
+  "description": "Everything you subscribe to, in one local inbox: listen, see or read it, on your own machine.",
   "scripts": {
     "start": "node src/server.ts",
     "dev": "node --watch src/server.ts",

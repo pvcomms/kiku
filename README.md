@@ -17,6 +17,7 @@ It reads the links you paste, the files you drop, the text you type, the feeds a
 | `podcasts.json`, `textfeeds.json` | shows and text feeds, and the Inbox all three kinds feed    |
 | `accounts.json`, `mail.json`      | mailboxes (mode 600, never shown back), and the mail cursor |
 | `mail/*.html`                     | each newsletter, cleaned: no pixels, no trackers, no images |
+| `notes.json`, `notes/*.md`        | what you marked and said, and each reading's notes as text  |
 | `public-token`                    | the secret behind the optional public feed link             |
 
 Outside that folder: `~/Library/Logs/kiku.log` when it runs under launchd; the Kokoro weights, about 340 MB, in `~/.cache/huggingface/hub/`, downloaded once on the first reading; and, if the Proton Drive app is signed in, a copy of every reading and drawing in `<Proton Drive>/Kiku/Audio/` and `Kiku/Artifacts/` (`KIKU_EXPORT_DIR` chooses another folder; no folder means no copies, and nothing else changes).
@@ -97,6 +98,12 @@ bin/doctor                             # what this machine has, and the fix for 
 ```
 
 Long books (over ~9,000 words with chapter headings) become one episode per chapter. A drawing of a long document is made from its outline, opening and close, and says so.
+
+## Notes
+
+While something plays, **mark** keeps the moment: the second, and the paragraph being spoken then. **speak** pauses, records you until you press stop, picks up where it was, and writes down what you said, on this Mac, with the Parakeet model through the same mlx-audio that speaks. `m` on a keyboard marks too, and so does the _next track_ button on headphones or the lock screen, since kiku has no next track. On a show's episode, which has no text, a mark transcribes the half minute before it from the episode itself.
+
+`/notes` has them all by reading: a timestamp plays from that second, and words can be typed or corrected there, which is where a mark made with a locked phone gets its words. Each reading's notes are also a markdown file in `~/Kiku/notes/`, copied to Proton Drive. Recording needs the page on `localhost` or the tailnet `https` address; on `http://<mac>.local` the browser refuses the microphone and the page says so. Without the Parakeet weights in the Hugging Face cache, `speak` is hidden and `bin/doctor` names the command that fetches them.
 
 ## How it works
 

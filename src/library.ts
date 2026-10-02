@@ -102,6 +102,9 @@ export class Library {
     });
     await fs.unlink(this.pathOf(item)).catch(() => {});
     await fs.unlink(path.join(this.textDir, item.id + ".txt")).catch(() => {});
+    await fs
+      .unlink(path.join(this.textDir, item.id + ".times.json"))
+      .catch(() => {});
     return true;
   }
 

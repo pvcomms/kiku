@@ -53,6 +53,8 @@ import { loadTemplate, render, toVenn } from "./artifact.ts";
 import {
   ARTIFACTS_DIR,
   AUDIO_DIR,
+  NOTES_DIR,
+  mirrorFile,
   reconcile,
   resolveExportDir,
   type Pair,
@@ -79,6 +81,16 @@ import {
   type TextFeed,
 } from "./textfeeds.ts";
 import { page, readPage } from "./ui.ts";
+import {
+  Notes,
+  LAG_SECONDS,
+  estimateStarts,
+  indexAt,
+  startsFromEnds,
+  type Note,
+  type NoteSource,
+} from "./notes.ts";
+import { canTranscribe, toWav, transcribe } from "./stt.ts";
 import { isLoopback, listenHost } from "./config.ts";
 
 const PORT = Number(process.env.KIKU_PORT ?? 4747);
@@ -100,6 +112,7 @@ const textFeeds = new TextFeeds(HOME);
 const accounts = new Accounts(HOME);
 const mail = new MailStore(HOME);
 const jobsStore = new JobsStore(HOME);
+const notes = new Notes(HOME);
 // Live jobs carry their input (a file job holds the bytes). Jobs restored from disk are
 // already reduced to their stored shape; they are kept apart so the two cannot be confused.
 const jobs: Job[] = [];
@@ -367,7 +380,9 @@ async function process1(job: Job) {
         ? `part ${i + 1} of ${parts.length} · ${words.toLocaleString()} words`
         : `${words.toLocaleString()} words`;
     touch(job);
+    const ends: number[] = [];
     await speak(textPath, wavPath, job.voice, job.speed, (p) => {
+      ends[p.done - 1] = p.seconds;
       job.progress = (i + p.done / p.total) / parts.length;
       job.seconds = p.seconds;
       job.detail =
@@ -375,6 +390,13 @@ async function process1(job: Job) {
         `${p.done}/${p.total} paragraphs · ${formatDuration(Math.round(p.seconds))} so far`;
       touch(job);
     });
+
+    // Where each paragraph starts, so a note can quote the one that was playing.
+    if (ends.length === paragraphs.length)
+      await fsp.writeFile(
+        path.join(lib.textDir, `${id}.times.json`),
+        JSON.stringify(startsFromEnds(ends)),
+      );
 
     job.status = "encoding";
     job.detail = "encoding mp3";
@@ -756,7 +778,7 @@ function baseOf(c: {
 
 // `/` is the players and the articles. `/sources` is everything that feeds them. With nothing
 // subscribed either is the setup page; `?setup=1` shows it again any time.
-const renderPage = async (c: Context, view: "focus" | "manage") =>
+const renderPage = async (c: Context, view: "focus" | "manage" | "notes") =>
   c.html(
     page({
       voices: VOICES,
@@ -764,12 +786,14 @@ const renderPage = async (c: Context, view: "focus" | "manage") =>
       hosts: hostList(),
       setup: sourceCount() === 0 || c.req.query("setup") === "1",
       see: await canSee(),
+      speak: canTranscribe(),
       inboxCap: INBOX_CAP,
       view,
     }),
   );
 app.get("/", (c) => renderPage(c, "focus"));
 app.get("/sources", (c) => renderPage(c, "manage"));
+app.get("/notes", (c) => renderPage(c, "notes"));
 
 // A cleaned reading as a page: the text of any item that has one, in the house type.
 app.get("/read/:id", async (c) => {
@@ -977,7 +1001,12 @@ app.put("/api/position/:id", async (c) => {
 });
 
 app.get("/api/library", (c) =>
-  c.json({ base: baseOf(c), items: lib.list(), positions }),
+  c.json({
+    base: baseOf(c),
+    items: lib.list(),
+    positions,
+    notes: notes.countBySource(),
+  }),
 );
 
 app.delete("/api/library/:id", async (c) => {
@@ -987,6 +1016,156 @@ app.delete("/api/library/:id", async (c) => {
     savePositionsSoon();
   }
   return ok ? c.json({ ok: true }) : c.json({ error: "No such item." }, 404);
+});
+
+// ---------- notes: a second the person chose, the words playing then, and what they said ----------
+
+/** The paragraph a reading was speaking at `at`, from its kept times or, before those, by length. */
+async function quoteFor(
+  item: Item,
+  at: number,
+): Promise<{ quote?: string; approx?: boolean }> {
+  const txt = await fsp
+    .readFile(path.join(lib.textDir, `${item.id}.txt`), "utf8")
+    .catch(() => null);
+  if (txt === null) return {};
+  const paras = txt.split("\n").filter((l) => l.trim());
+  const times: unknown = await fsp
+    .readFile(path.join(lib.textDir, `${item.id}.times.json`), "utf8")
+    .then((t) => JSON.parse(t))
+    .catch(() => null);
+  const exact = Array.isArray(times) && times.length === paras.length;
+  const starts = exact
+    ? (times as number[])
+    : estimateStarts(paras, item.seconds ?? 0);
+  const quote = paras[indexAt(starts, Math.max(0, at - LAG_SECONDS))];
+  return exact ? { quote } : { quote, approx: true };
+}
+
+/** Copy a reading's notes file into Proton Drive, or remove the copy when its notes are gone. */
+function exportNotes(sourceId: string): void {
+  const dir = resolveExportDir();
+  if (!dir) return;
+  const src = notes.fileOf(sourceId);
+  mirrorFile(src, path.join(dir, NOTES_DIR, path.basename(src))).catch((e) =>
+    console.log(`[kiku] notes export failed: ${e instanceof Error ? e.message : e}`),
+  );
+}
+
+/** An episode has no text: hear the half minute before the mark, from the enclosure, here. */
+async function hearWindow(note: Note, url: string): Promise<void> {
+  const from = Math.max(0, note.at - 30);
+  const wav = path.join(os.tmpdir(), `kiku-window-${note.id}.wav`);
+  try {
+    await toWav(url, wav, { from, seconds: Math.max(1, note.at - from) });
+    const quote = await transcribe(wav);
+    await notes.update(note.id, { quote: quote || undefined, pending: undefined });
+  } catch (e) {
+    console.log(
+      `[kiku] could not hear the episode window: ${e instanceof Error ? e.message : e}`,
+    );
+    await notes.update(note.id, { pending: undefined });
+  } finally {
+    fsp.unlink(wav).catch(() => {});
+  }
+  exportNotes(note.sourceId);
+}
+
+app.get("/api/notes", (c) => {
+  const { sources, notes: all } = notes.all();
+  const playable: Record<string, boolean> = {};
+  for (const s of Object.values(sources))
+    playable[s.id] = s.kind === "episode" || lib.get(s.id) !== undefined;
+  return c.json({ sources, notes: all, playable, speak: canTranscribe() });
+});
+
+app.post("/api/notes", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const itemId = path.basename(String(body.itemId ?? ""));
+  const at = Math.round(Number(body.at) * 10) / 10;
+  if (!itemId || itemId.length > 120 || !Number.isFinite(at) || at < 0)
+    return c.json({ error: "Which reading, and at what second?" }, 400);
+  const item = lib.get(itemId);
+  let source: NoteSource;
+  let fields: Partial<Note> = {};
+  if (item && kindOf(item) === "audio") {
+    source = {
+      id: item.id,
+      kind: "reading",
+      title: item.title,
+      by: [item.author, item.site].filter(Boolean).join(" · ") || undefined,
+      file: item.file,
+      sourceUrl: item.sourceUrl,
+    };
+    fields = await quoteFor(item, at);
+  } else if (typeof body.file === "string" && /^https?:\/\//.test(body.file)) {
+    source = notes.source(itemId) ?? {
+      id: itemId,
+      kind: "episode",
+      title: String(body.title ?? "").slice(0, 300) || "An episode",
+      by: String(body.by ?? "").slice(0, 300) || undefined,
+      file: body.file,
+      art: typeof body.art === "string" && /^https?:\/\//.test(body.art) ? body.art : undefined,
+    };
+    if (canTranscribe()) fields.pending = true;
+  } else return c.json({ error: "No such reading." }, 404);
+  const note: Note = {
+    id: newId(),
+    sourceId: source.id,
+    at,
+    ...fields,
+    createdAt: new Date().toISOString(),
+  };
+  await notes.add(source, note);
+  exportNotes(source.id);
+  if (note.pending) void hearWindow(note, source.file);
+  return c.json({ note, source }, 201);
+});
+
+// What the person said, recorded by the page: any format ffmpeg reads, transcribed on this machine.
+app.post("/api/notes/:id/voice", async (c) => {
+  const note = notes.get(c.req.param("id"));
+  if (!note) return c.json({ error: "No such note." }, 404);
+  if (!canTranscribe())
+    return c.json({ error: "No voice model on this machine." }, 503);
+  const buf = Buffer.from(await c.req.arrayBuffer());
+  if (buf.length === 0) return c.json({ error: "Nothing was recorded." }, 400);
+  if (buf.length > 40 * 1024 * 1024)
+    return c.json({ error: "That recording is too long." }, 413);
+  const raw = path.join(os.tmpdir(), `kiku-voice-${note.id}.bin`);
+  const wav = path.join(os.tmpdir(), `kiku-voice-${note.id}.wav`);
+  try {
+    await fsp.writeFile(raw, buf);
+    await toWav(raw, wav);
+    const heard = await transcribe(wav);
+    const said = [note.said, heard].filter(Boolean).join(" ");
+    const updated = await notes.update(note.id, { said: said || undefined });
+    exportNotes(note.sourceId);
+    return c.json({ note: updated, heard });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  } finally {
+    fsp.unlink(raw).catch(() => {});
+    fsp.unlink(wav).catch(() => {});
+  }
+});
+
+app.patch("/api/notes/:id", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { said?: unknown };
+  if (typeof body.said !== "string") return c.json({ error: "said?" }, 400);
+  const said = body.said.trim().slice(0, 20_000);
+  const note = await notes.update(c.req.param("id"), { said: said || undefined });
+  if (!note) return c.json({ error: "No such note." }, 404);
+  exportNotes(note.sourceId);
+  return c.json({ note });
+});
+
+app.delete("/api/notes/:id", async (c) => {
+  const note = notes.get(c.req.param("id"));
+  if (!note || !(await notes.remove(note.id)))
+    return c.json({ error: "No such note." }, 404);
+  exportNotes(note.sourceId);
+  return c.json({ ok: true });
 });
 
 app.get("/feed.xml", (c) => {
@@ -1471,6 +1650,7 @@ await podcasts.init();
 await textFeeds.init();
 await accounts.init();
 await mail.init();
+await notes.init();
 restored = await jobsStore.load();
 void exportItems(lib.list());
 setInterval(() => void exportItems(lib.list()), 15 * 60 * 1000);

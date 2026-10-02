@@ -97,6 +97,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     alert.beginSheetModal(for: window) { _ in completionHandler() }
   }
 
+  // The microphone, for a spoken note: granted to the page this window serves and nothing else.
+  // macOS still asks once, with the usage string in Info.plist.
+  func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+               initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
+               decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+    let ours = origin.host == pageURL.host && origin.port == (pageURL.port ?? 80)
+    decisionHandler(ours && type == .microphone ? .grant : .deny)
+  }
+
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 }
 

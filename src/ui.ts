@@ -11,8 +11,10 @@ type PageProps = {
   see: boolean;
   /** The inbox keeps this many; past it the oldest fall off. The page says so when it is full. */
   inboxCap: number;
-  /** `focus` is `/`: the players and the articles, nothing else. `manage` is `/sources`: the rest. */
-  view: "focus" | "manage";
+  /** A voice model is on disk, so the player offers `speak`. Marks work without it. */
+  speak: boolean;
+  /** `focus` is `/`: the players and the articles, nothing else. `manage` is `/sources`: the rest. `notes` is `/notes`. */
+  view: "focus" | "manage" | "notes";
 };
 
 const esc = (s: string) =>
@@ -146,6 +148,7 @@ export function page({
   see,
   inboxCap,
   view,
+  speak,
 }: PageProps): string {
   const voiceOptions = voices
     .map(
@@ -154,11 +157,10 @@ export function page({
     )
     .join("");
   const hostsJson = JSON.stringify(hosts);
-  const manage = setup || view === "manage";
-  // The focus page hides what it does not need rather than leaving it out: the script finds the
+  const at = setup ? "manage" : view;
+  // Each view hides what it does not need rather than leaving it out: the script finds the
   // same elements either way, and a link shared to the page (?u=) still has a form to submit.
-  const only = (where: "focus" | "manage") =>
-    (where === "focus") === manage ? " hidden" : "";
+  const only = (where: typeof at) => (where === at ? "" : " hidden");
 
   const sources = `
   <section class="rise" id="sources"${only("manage")}>
@@ -309,15 +311,31 @@ export function page({
     <h2>Library <small id="count"></small></h2>
     <div id="library"><div class="empty">Nothing yet.</div></div>
   </section>
+
+  <section class="rise" id="notesSec"${only("notes")}>
+    <h2>Notes <small id="notesCount"></small></h2>
+    <div id="notes"><div class="empty">Nothing marked yet. While something plays, press <b>mark</b> to keep the moment${speak ? ", or <b>speak</b> to say what it made you think" : ""}.</div></div>
+  </section>
   ${sources}
   ${phone}`;
 
   const nav = setup
     ? ""
-    : `<nav class="nav" aria-label="Pages"><a href="/"${manage ? "" : ' class="on"'}>inbox</a><a href="/sources"${manage ? ' class="on"' : ""}>sources</a></nav>`;
+    : `<nav class="nav" aria-label="Pages">${(
+        [
+          ["/", "focus", "inbox"],
+          ["/notes", "notes", "notes"],
+          ["/sources", "manage", "sources"],
+        ] as const
+      )
+        .map(
+          ([href, v, name]) =>
+            `<a href="${href}"${at === v ? ' class="on"' : ""}>${name}</a>`,
+        )
+        .join("")}</nav>`;
 
   return `<!doctype html>
-<html lang="en" data-see="${see ? "on" : "off"}">
+<html lang="en" data-see="${see ? "on" : "off"}" data-speak="${speak ? "on" : "off"}">
 <head>
 <meta charset="utf-8">
 ${THEME_HEAD}
@@ -477,8 +495,49 @@ ${THEME_METAS}
   .player .prow { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
   .player .t { display: block; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .player audio { width: 100%; display: block; height: 40px; }
-  .speedBtn { height: 24px; padding: 0 8px; border-radius: 4px; border: 1px solid var(--line); background: var(--paper); color: var(--ink-2); font: 12px/1 var(--mono); cursor: pointer; flex-shrink: 0; transition: background-color 160ms var(--ease), color 160ms var(--ease), border-color 160ms var(--ease); }
-  .speedBtn:hover { color: var(--ink); border-color: var(--ink-3); }
+  .speedBtn, .pbtn { height: 24px; padding: 0 8px; border-radius: 4px; border: 1px solid var(--line); background: var(--paper); color: var(--ink-2); font: 12px/1 var(--mono); cursor: pointer; flex-shrink: 0; transition: background-color 160ms var(--ease), color 160ms var(--ease), border-color 160ms var(--ease); }
+  .speedBtn:hover, .pbtn:hover { color: var(--ink); border-color: var(--ink-3); }
+  .pbtn:active { transform: scale(0.96); }
+  .pbtn.rec { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .player .prow .t { flex: 1 1 auto; min-width: 0; }
+  html[data-speak="off"] #speakBtn { display: none; }
+  .pnote { font-size: 12px; line-height: 1.6; color: var(--ink-2); margin: 0 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; animation: rise 300ms var(--ease); }
+  .pnote.rec { color: var(--accent); }
+
+  /* notes: a reading, then its moments in time order */
+  .nsrc + .nsrc { margin-top: 36px; }
+  .nhead { padding: 0 0 12px; }
+  .nhead .t { display: block; font-weight: 500; line-height: 1.5; }
+  .nhead .m { display: block; font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+  .note { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; gap: 14px; align-items: start; padding: 14px 0; border-top: 1px solid var(--line); }
+  .note:last-child { border-bottom: 1px solid var(--line); }
+  .stamp { height: 28px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); color: var(--ink); font: 500 12px/1 var(--mono); font-variant-numeric: tabular-nums; cursor: pointer; padding: 0 8px; transition: background-color 160ms var(--ease), color 160ms var(--ease), border-color 160ms var(--ease), transform 160ms var(--ease); }
+  .stamp:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .stamp:active { transform: scale(0.96); }
+  span.stamp { display: inline-grid; place-items: center; cursor: default; color: var(--ink-3); }
+  span.stamp:hover { background: var(--paper); color: var(--ink-3); border-color: var(--line); }
+  .q { margin: 0; padding: 0 0 0 12px; border-left: 2px solid var(--line); color: var(--ink-2); font-size: 13px; line-height: 1.7; }
+  .q.wait { color: var(--ink-3); }
+  .q .qt { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 8; overflow: hidden; }
+  .q.open .qt { display: block; }
+  .q.more { cursor: pointer; }
+  .q.more:not(.open)::after { content: "show all"; display: block; color: var(--ink-3); font-size: 11px; margin-top: 4px; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line); }
+  .q small { display: block; color: var(--ink-3); font-size: 11px; margin-top: 4px; }
+  .said { margin: 10px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .q + .said { margin-top: 10px; }
+  .nbody > .said:first-child { margin-top: 3px; }
+  .nbody textarea { border: 1px solid var(--line); border-radius: 4px; background: var(--paper); min-height: 72px; margin-top: 10px; padding: 8px 10px; font-size: 13px; }
+  .nbody textarea:focus { border-color: var(--ink-3); }
+  .nbody .row { justify-content: flex-end; }
+  .note .acts { margin-top: 0; }
+  @media (max-width: 480px) {
+    .note { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "stamp . acts" "body body body"; row-gap: 10px; }
+    .note .stamp { grid-area: stamp; } .note .nbody { grid-area: body; } .note .acts { grid-area: acts; }
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .note .acts { opacity: 0; transition: opacity 160ms var(--ease); }
+    .note:hover .acts, .note:focus-within .acts { opacity: 1; }
+  }
   @media (max-width: 480px) { .episodes { padding-left: 0; } .item, .feed-row { gap: 12px; } }
 </style>
 </head>
@@ -498,8 +557,11 @@ ${THEME_METAS}
   <div class="in">
     <div class="prow">
       <span class="t" id="playerTitle"></span>
+      <button class="pbtn" id="markBtn" type="button" title="Keep this moment as a note (m)">mark</button>
+      <button class="pbtn" id="speakBtn" type="button" title="Pause, say what it made you think, and keep it as a note">speak</button>
       <button class="speedBtn" id="speedBtn" type="button" title="Playback speed">1×</button>
     </div>
+    <div class="pnote" id="pnote" role="status" hidden></div>
     <audio id="audio" controls preload="none"></audio>
   </div>
 </div>
@@ -535,6 +597,7 @@ ${THEME_METAS}
   // --- player (shared by the library, the inbox's episodes and a show's episode list) ---
   const audio = $('#audio'), player = $('#player');
   let current = null;
+  let currentD = null;
   const SPEEDS = [1, 1.25, 1.5, 1.75, 2, 0.75];
   let speed = Number(store.get('kiku.speed')) || 1;
   if (!SPEEDS.includes(speed)) speed = 1;
@@ -547,22 +610,30 @@ ${THEME_METAS}
     store.set('kiku.speed', String(speed));
     speedBtn.textContent = speed + '×';
   });
-  function play(d) {
-    if (current === d.id) { audio.paused ? audio.play() : audio.pause(); return; }
+  // at, when given, is a second to start from: a note's timestamp.
+  function play(d, at) {
+    const from = Number.isFinite(at) ? Math.max(0, at) : null;
+    if (current === d.id) {
+      if (from === null) { audio.paused ? audio.play() : audio.pause(); return; }
+      audio.currentTime = from; audio.play().catch(() => {}); return;
+    }
     current = d.id;
+    currentD = { id: d.id, file: d.file, title: d.title, by: d.by || '', art: d.art || '' };
     const isExternal = d.file.startsWith('http://') || d.file.startsWith('https://');
     audio.src = isExternal ? d.file : '/audio/' + encodeURIComponent(d.file);
     audio.playbackRate = speed;
     $('#playerTitle').textContent = d.title;
     player.classList.add('on');
-    let pos = Number(store.get('kiku.pos.' + d.id) || 0);
-    fetch('/api/positions').then((r) => r.json()).then((p) => { const sp = Number(p[d.id]?.seconds || 0); if (sp > pos) { pos = sp; if (audio.readyState >= 1 && audio.currentTime < 5 && pos < audio.duration - 10) audio.currentTime = pos; } }).catch(() => {});
-    audio.addEventListener('loadedmetadata', () => { if (pos > 5 && pos < audio.duration - 10) audio.currentTime = pos; }, { once: true });
+    let pos = from ?? Number(store.get('kiku.pos.' + d.id) || 0);
+    if (from === null) fetch('/api/positions').then((r) => r.json()).then((p) => { const sp = Number(p[d.id]?.seconds || 0); if (sp > pos) { pos = sp; if (audio.readyState >= 1 && audio.currentTime < 5 && pos < audio.duration - 10) audio.currentTime = pos; } }).catch(() => {});
+    audio.addEventListener('loadedmetadata', () => { if (from !== null) audio.currentTime = from; else if (pos > 5 && pos < audio.duration - 10) audio.currentTime = pos; }, { once: true });
     audio.play().catch(() => {});
     if ('mediaSession' in navigator) {
       navigator.mediaSession.metadata = new MediaMetadata({ title: d.title, artist: d.by || 'Kiku', album: 'Kiku', artwork: [{ src: d.art || '/cover.png', sizes: '1400x1400', type: 'image/png' }] });
       navigator.mediaSession.setActionHandler('seekbackward', () => { audio.currentTime = Math.max(0, audio.currentTime - 15); });
       navigator.mediaSession.setActionHandler('seekforward', () => { audio.currentTime = Math.min(audio.duration, audio.currentTime + 30); });
+      // There is no next track in kiku, so the headphones' and the lock screen's "next" marks the moment.
+      try { navigator.mediaSession.setActionHandler('nexttrack', () => { mark(false); }); } catch {}
     }
     document.querySelectorAll('.item').forEach((el) => el.classList.toggle('playing', el.dataset.id === d.id));
   }
@@ -572,6 +643,148 @@ ${THEME_METAS}
   audio.addEventListener('timeupdate', () => { if (!current) return; const now = Date.now(); if (now - lastSave > 3000) { lastSave = now; store.set('kiku.pos.' + current, String(Math.floor(audio.currentTime))); } if (now - lastPush > 10000) { lastPush = now; push(current, Math.floor(audio.currentTime)); } });
   audio.addEventListener('pause', () => { if (current) push(current, Math.floor(audio.currentTime)); });
   audio.addEventListener('ended', () => { if (current) { store.set('kiku.pos.' + current, String(Math.floor(audio.duration))); push(current, Math.floor(audio.duration)); } if (!SETUP) loadLibrary(); });
+
+  // --- notes: mark a moment, or say what it made you think; both kept on this machine ---
+  const pnote = $('#pnote'), markBtn = $('#markBtn'), speakBtn = $('#speakBtn');
+  const clip = (t, n) => { t = String(t || '').replace(/\\s+/g, ' ').trim(); n = n || 90; return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+  let sayTimer = 0;
+  function say(msg, ms, cls) {
+    clearTimeout(sayTimer);
+    pnote.className = 'pnote' + (cls ? ' ' + cls : '');
+    pnote.textContent = msg; pnote.hidden = false;
+    if (ms) sayTimer = setTimeout(() => { pnote.hidden = true; }, ms);
+  }
+  async function mark(quiet) {
+    if (!currentD) return null;
+    const at = audio.currentTime || 0;
+    try {
+      const r = await postJson('/api/notes', { itemId: currentD.id, at, title: currentD.title, by: currentD.by, file: currentD.file, art: currentD.art });
+      if (!quiet) say('marked ' + fmt(at) + (r.note.quote ? ' · ' + clip(r.note.quote) : r.note.pending ? ' · hearing the half minute before it' : ''), 6000);
+      if (!quiet) refreshNotes();
+      return r.note;
+    } catch (e) { say(e.message, 6000); return null; }
+  }
+  markBtn.addEventListener('click', () => mark(false));
+
+  // Speaking: pause, mark, record until pressed again, resume, then transcribe here while it plays on.
+  let rec = null;
+  async function startSpeaking() {
+    if (!currentD) return;
+    if (!window.isSecureContext || !navigator.mediaDevices || !window.MediaRecorder) {
+      say('speaking needs this page on localhost or its https address; mark works here', 8000); return;
+    }
+    const wasPlaying = !audio.paused;
+    audio.pause();
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch { say('the microphone was not allowed', 6000); if (wasPlaying) audio.play().catch(() => {}); return; }
+    const mime = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'].find((t) => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t));
+    const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+    const chunks = [];
+    mr.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    rec = { mr, stream, chunks, wasPlaying, t0: Date.now(), note: mark(true), at: audio.currentTime || 0 };
+    mr.start(1000);
+    speakBtn.classList.add('rec'); speakBtn.textContent = 'stop';
+    const tick = () => { if (!rec) return; const s = (Date.now() - rec.t0) / 1000; say('recording at ' + fmt(rec.at) + ' · ' + fmt(s) + ' · press stop when done', 0, 'rec'); if (s >= 180) stopSpeaking(); };
+    tick(); rec.timer = setInterval(tick, 500);
+  }
+  async function stopSpeaking() {
+    const r = rec; if (!r) return; rec = null;
+    clearInterval(r.timer);
+    const stopped = new Promise((done) => { r.mr.onstop = done; });
+    r.mr.stop(); await stopped;
+    r.stream.getTracks().forEach((t) => t.stop());
+    speakBtn.classList.remove('rec'); speakBtn.textContent = 'speak';
+    if (r.wasPlaying) audio.play().catch(() => {});
+    const note = await r.note;
+    if (!note) return;
+    say('writing down what you said…');
+    try {
+      const blob = new Blob(r.chunks, { type: r.mr.mimeType || 'application/octet-stream' });
+      const res = await fetch('/api/notes/' + note.id + '/voice', { method: 'POST', headers: { 'content-type': blob.type || 'application/octet-stream' }, body: blob });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || 'could not transcribe it');
+      say('noted at ' + fmt(note.at) + (d.heard ? ' · “' + clip(d.heard, 70) + '”' : ' · nothing was heard'), 8000);
+    } catch (e) { say('the mark is kept; the words were not: ' + e.message, 9000); }
+    refreshNotes();
+  }
+  speakBtn.addEventListener('click', () => (rec ? stopSpeaking() : startSpeaking()));
+  document.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey || !currentD) return;
+    const t = e.target;
+    if (t && (t.closest('input, textarea, select, [contenteditable]'))) return;
+    if (e.key === 'm') { e.preventDefault(); mark(false); }
+  });
+
+  // The notes view: every note by reading, newest reading first, its moments in time order.
+  let noteCounts = {};
+  let notesTimer = 0;
+  function refreshNotes() { if (!$('#notesSec').hidden) loadNotes(); else loadLibrary(); }
+  async function loadNotes() {
+    if ($('#notesSec').hidden) return;
+    clearTimeout(notesTimer);
+    let d;
+    try { d = await (await fetch('/api/notes')).json(); } catch { return; }
+    const groups = {};
+    for (const n of d.notes) (groups[n.sourceId] = groups[n.sourceId] || []).push(n);
+    const order = Object.keys(groups).sort((a, b) => {
+      const last = (k) => groups[k].reduce((m, n) => (n.createdAt > m ? n.createdAt : m), '');
+      return last(b).localeCompare(last(a));
+    });
+    $('#notesCount').textContent = d.notes.length ? d.notes.length + (d.notes.length === 1 ? ' note' : ' notes') + ' · ' + order.length + (order.length === 1 ? ' reading' : ' readings') : '';
+    if (!order.length) return;
+    $('#notes').innerHTML = order.map((k) => {
+      const src = d.sources[k] || { id: k, title: 'A reading that is gone', kind: 'reading' };
+      const can = d.playable[k];
+      const list = groups[k].sort((a, b) => a.at - b.at);
+      return '<div class="nsrc" id="n-' + esc(k) + '" data-id="' + esc(k) + '" data-file="' + esc(src.file || '') + '" data-title="' + esc(src.title) + '" data-by="' + esc(src.by || '') + '" data-art="' + esc(src.art || '') + '">'
+        + '<div class="nhead"><span class="t">' + esc(src.title) + '</span><span class="m">' + [src.by ? esc(src.by) : '', src.kind === 'episode' ? 'episode' : '', list.length + (list.length === 1 ? ' note' : ' notes'), can ? '' : 'the audio is gone'].filter(Boolean).join(' · ') + '</span></div>'
+        + list.map((n) => {
+          const stamp = can ? '<button class="stamp" type="button" data-at="' + n.at + '" title="Play from here">' + fmt(n.at) + '</button>' : '<span class="stamp">' + fmt(n.at) + '</span>';
+          const q = n.pending ? '<blockquote class="q wait">hearing the half minute before this…</blockquote>'
+            : n.quote ? '<blockquote class="q"><span class="qt">' + esc(n.quote) + '</span>' + (n.approx ? '<small>the paragraph is approximate: this reading was made before times were kept</small>' : '') + '</blockquote>' : '';
+          return '<div class="note" data-note="' + esc(n.id) + '">' + stamp
+            + '<div class="nbody">' + q + (n.said ? '<p class="said">' + esc(n.said) + '</p>' : '') + '</div>'
+            + '<div class="acts"><button class="act write" type="button">' + (n.said ? 'edit' : 'write') + '</button>'
+            + '<button class="icon del" type="button" title="Remove this note" aria-label="Remove this note">' + ICON.x + '</button></div></div>';
+        }).join('') + '</div>';
+    }).join('');
+    $$('#notes .q .qt').forEach((el) => { if (el.scrollHeight > el.clientHeight + 2) el.parentElement.classList.add('more'); });
+    if (location.hash && !loadNotes.scrolled) { loadNotes.scrolled = true; const el = document.getElementById(location.hash.slice(1)); if (el) el.scrollIntoView({ block: 'start' }); }
+    if (d.notes.some((n) => n.pending)) notesTimer = setTimeout(loadNotes, 4000);
+  }
+  $('#notes').addEventListener('click', async (e) => {
+    const src = e.target.closest('.nsrc'); if (!src) return;
+    const more = e.target.closest('.q.more');
+    if (more) { more.classList.toggle('open'); return; }
+    const stamp = e.target.closest('button.stamp');
+    if (stamp) { play(src.dataset, Number(stamp.dataset.at)); return; }
+    const row = e.target.closest('.note'); if (!row) return;
+    const id = row.dataset.note;
+    const del = e.target.closest('.del');
+    if (del) {
+      if (!arm(del, 'remove', 3000)) return;
+      row.classList.add('leaving');
+      await fetch('/api/notes/' + id, { method: 'DELETE' }).catch(() => {});
+      setTimeout(loadNotes, 180); return;
+    }
+    if (e.target.closest('.write')) {
+      const body = row.querySelector('.nbody');
+      if (body.querySelector('textarea')) return;
+      const said = body.querySelector('.said');
+      const ta = document.createElement('textarea');
+      ta.value = said ? said.textContent : ''; ta.placeholder = 'what it made you think'; ta.setAttribute('aria-label', 'Your words for this moment');
+      const bar = document.createElement('div'); bar.className = 'row';
+      bar.innerHTML = '<button class="link" type="button" data-cancel>cancel</button><button class="btn-2" type="button" data-save>save</button>';
+      if (said) said.hidden = true;
+      body.append(ta, bar); ta.focus();
+      bar.querySelector('[data-cancel]').addEventListener('click', () => loadNotes());
+      bar.querySelector('[data-save]').addEventListener('click', async () => {
+        await fetch('/api/notes/' + id, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ said: ta.value }) }).catch(() => {});
+        loadNotes();
+      });
+    }
+  });
 
   // --- sources: one list with a tab per kind, a finder and an order, built to prune a long list ---
   let sources = { feeds: [], shows: [], mail: [] };
@@ -863,7 +1076,7 @@ ${THEME_METAS}
   async function loadLibrary() {
     let items = [];
     let serverPos = {};
-    try { const d = await (await fetch('/api/library')).json(); items = d.items; serverPos = d.positions || {}; } catch {}
+    try { const d = await (await fetch('/api/library')).json(); items = d.items; serverPos = d.positions || {}; noteCounts = d.notes || {}; } catch {}
     const heard = items.filter((it) => !it.kind || it.kind === 'audio').length, drawn = items.filter((it) => it.kind === 'artifact').length, texts = items.filter((it) => it.kind === 'text').length;
     $('#count').textContent = [heard ? heard + (heard === 1 ? ' reading' : ' readings') : '', drawn ? drawn + ' drawn' : '', texts ? texts + ' to read' : ''].filter(Boolean).join(' · ');
     if (!items.length) { $('#library').innerHTML = '<div class="empty">Nothing yet.</div>'; return; }
@@ -907,6 +1120,7 @@ ${THEME_METAS}
         </div>
         <div class="acts">
           <a class="act" href="/read/\${encodeURIComponent(it.id)}" title="Read the text">text</a>
+          \${noteCounts[it.id] ? '<a class="act" href="/notes#n-' + it.id + '" title="The moments kept from this reading">' + noteCounts[it.id] + (noteCounts[it.id] === 1 ? ' note' : ' notes') + '</a>' : ''}
           <a class="act" href="/audio/\${encodeURIComponent(it.file)}" download title="Download mp3">mp3</a>
           <button class="act del" type="button" title="Remove" aria-label="Remove">×</button>
         </div>
@@ -1060,6 +1274,7 @@ ${THEME_METAS}
 
   loadLibrary();
   loadInbox();
+  loadNotes();
   poll(false);
   setInterval(loadInbox, 60000);
 })();

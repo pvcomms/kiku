@@ -12,6 +12,7 @@ import path from "node:path";
 
 export const AUDIO_DIR = "Audio";
 export const ARTIFACTS_DIR = "Artifacts";
+export const NOTES_DIR = "Notes";
 
 /**
  * Where the copies go, or null when this machine has nowhere to put them. `KIKU_EXPORT_DIR`
@@ -53,6 +54,21 @@ export async function exportFile(src: string, dest: string): Promise<Copied> {
   await fsp.copyFile(src, part);
   await fsp.rename(part, dest);
   return "copied";
+}
+
+/**
+ * A file that changes in place, like a reading's notes: copied every time it changes, through a
+ * `.part` and a rename, and removed from the folder when the original is gone.
+ */
+export async function mirrorFile(src: string, dest: string): Promise<void> {
+  if (!(await fsp.stat(src).catch(() => null))) {
+    await fsp.unlink(dest).catch(() => {});
+    return;
+  }
+  await fsp.mkdir(path.dirname(dest), { recursive: true });
+  const part = dest + ".part";
+  await fsp.copyFile(src, part);
+  await fsp.rename(part, dest);
 }
 
 export type Pair = { id: string; src: string; dest: string };

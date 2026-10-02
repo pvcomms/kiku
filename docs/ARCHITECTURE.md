@@ -36,7 +36,9 @@ kiku/
     textfeeds.ts   RSS/Atom text feeds, the Inbox for all three source kinds, opmlUrls
     hygiene.ts     the link rules every source passes through once: pixels, redirectors, utm_
     mail/          accounts.ts (~/Kiku/accounts.json) · detect.ts (list headers) · sanitize.ts · sync.ts (IMAP)
-    ui.ts          the page, served as a string, in one mono face: `/` is inbox + library + player, `/sources` the rest; readPage
+    notes.ts       ~/Kiku/notes.json, written serially; each reading's notes rendered to notes/<id>.md
+    stt.ts         speech to text here: a spoken note, or an episode's half minute; one at a time
+    ui.ts          the page, served as a string, in one mono face: `/` is inbox + library + player, `/notes`, `/sources` the rest; readPage
   bin/
     kiku           CLI; --see draws instead of reads; --serve, --setup, --doctor for a Homebrew install
     doctor         the readiness report from the shell; exit 1 when a reading cannot happen
@@ -46,6 +48,7 @@ kiku/
     kiku-remote    tailscale serve — the tailnet address
     kiku-public    secret public link, for players that crawl from a cloud
     tts.py         the MLX driver, run inside .venv
+    stt.py         one wav in, its words out: Parakeet through mlx-audio, the same venv
     install-launchd  renders launchd/…plist.template for this machine and loads it
     setup-python.sh  builds the speech venv ($KIKU_VENV, default .venv) from pyproject.toml
     warm-voice       caches the Kokoro weights with one short reading; setup-road and `kiku --setup` call it
@@ -115,6 +118,8 @@ starts caught up. `mode: "read"` on a job is the third leg of `process1()`.
 | `GET /api/inbox` · `POST /api/inbox/:id/{listen,see,read,dismiss}`               | the deliberate-choice gate: the four verbs                    |
 | `POST /api/inbox/dismiss` (`ids`)                                                | dismiss the narrowed view the person confirmed                |
 | `GET /read/:id`                                                                  | a cleaned reading as a page                                   |
+| `GET /notes` · `GET`/`POST /api/notes` · `PATCH`/`DELETE /api/notes/:id`         | marks: the second, the words playing then, the person's words |
+| `POST /api/notes/:id/voice`                                                      | a recording in any format ffmpeg reads, transcribed here      |
 | `GET /api/positions`                                                             | resume points, shared across devices                          |
 | `GET /text/:id` · `/cover.png` · `/manifest.webmanifest` · `/health`             | supporting                                                    |
 
@@ -128,6 +133,9 @@ starts caught up. `mode: "read"` on a job is the third leg of `process1()`.
 | `~/Kiku/library.json`                                             | read+write | the library, written serially                             | `KIKU_HOME`                 |
 | `~/Kiku/jobs.json`                                                | read+write | jobs, so an interrupted one is reported                   | `KIKU_HOME`                 |
 | `~/Kiku/positions.json`                                           | read+write | resume points                                             | `KIKU_HOME`                 |
+| `~/Kiku/text/*.times.json`                                        | write      | where each paragraph of a reading starts, in seconds      | `KIKU_HOME`                 |
+| `~/Kiku/notes.json`, `~/Kiku/notes/*.md`                          | read+write | notes; one markdown file per reading, written not read    | `KIKU_HOME`                 |
+| `~/.cache/huggingface/hub/models--mlx-community--parakeet-tdt-0.6b-v3` | read | the model that transcribes a spoken note; optional   | `KIKU_STT_MODEL`            |
 | `~/Kiku/public-token`                                             | read+write | the secret for `kiku-public`                              | `KIKU_HOME`                 |
 | `~/Kiku/accounts.json`                                            | read+write | mailboxes with passwords, mode 600; never sent back      | `KIKU_HOME`                 |
 | `~/Kiku/mail.json`, `~/Kiku/mail/*.html`                          | read+write | the mail cursor; each letter, cleaned                     | `KIKU_HOME`                 |

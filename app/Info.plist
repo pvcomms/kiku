@@ -14,6 +14,7 @@
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>NSMicrophoneUsageDescription</key><string>Kiku records only between speak and stop, and transcribes it on this Mac.</string>
   <key>NSHumanReadableCopyright</key><string>Param Vaswani</string>
   <!-- The stand is plain http on the LAN/loopback only; every off-origin link is handed to the
        default browser instead of loading in this view (see main.swift), so the narrower

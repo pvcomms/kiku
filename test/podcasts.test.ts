@@ -50,3 +50,14 @@ test("looksLikeShow: audio on every item is not enough when the items are posts"
   assert.equal(looksLikeShow(wrap(`<item><title>text only</title><link>https://x/a</link></item>` + episode(1))), false);
   assert.equal(looksLikeShow(`<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>a</title></entry></feed>`), false);
 });
+
+test("a show keeps the date of its newest episode", async () => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), "kiku-pods-latest-"));
+  const pods = new Podcasts(home);
+  await pods.init();
+  await pods.add({ id: "s1", title: "S", feedUrl: "https://x/feed", addedAt: "2026-09-01T00:00:00.000Z" });
+  await pods.applyPoll("s1", [ep("a", 3), ep("b", 7), ep("c", 5)]);
+  assert.equal(pods.get("s1")?.latest, "2026-09-07T00:00:00.000Z");
+  await pods.applyPoll("s1", [], "Feed returned 503");
+  assert.equal(pods.get("s1")?.latest, "2026-09-07T00:00:00.000Z");
+});

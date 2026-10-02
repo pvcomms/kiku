@@ -15,11 +15,23 @@ export type Podcast = {
   addedAt: string; // ISO
   lastPolled?: string; // ISO
   lastError?: string;
+  /** The newest episode the show carried when it was last read. */
+  latest?: string; // ISO
   /** Episode ids already surfaced in the inbox. Absent on shows from before episodes went there. */
   seen?: string[];
 };
 
 const SEEN_CAP = 300;
+
+/** The newest valid date among a feed's items, or undefined when none carries one. Shared with textfeeds.ts. */
+export function latestOf(items: { pubDate: string }[]): string | undefined {
+  let best: string | undefined;
+  for (const { pubDate } of items) {
+    if (Number.isNaN(Date.parse(pubDate))) continue;
+    if (!best || pubDate > best) best = pubDate;
+  }
+  return best;
+}
 
 export type Episode = {
   id: string;
@@ -95,6 +107,8 @@ export class Podcasts {
       show.lastPolled = new Date().toISOString();
       show.lastError = error;
       if (error) return;
+      const newest = latestOf(episodes);
+      if (newest) show.latest = newest;
       const catchingUp = show.seen === undefined;
       const seen = new Set(show.seen ?? []);
       for (const ep of episodes) {

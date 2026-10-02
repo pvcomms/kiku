@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { isLoopback, listenHost, venvDir, venvPython } from "../src/config.ts";
-import { page } from "../src/ui.ts";
+import { page, readPage } from "../src/ui.ts";
 
 test("the page answers on loopback unless told otherwise", () => {
   assert.equal(listenHost({}), "127.0.0.1");
@@ -25,7 +25,37 @@ test("the speech environment is .venv in the repo unless KIKU_VENV moves it", ()
 });
 
 test("the page says whether there is anything to draw with", () => {
-  const props = { voices: [], defaultVoice: "af_heart", hosts: [], setup: false };
+  const props = { voices: [], defaultVoice: "af_heart", hosts: [], setup: false, inboxCap: 2000, view: "focus" as const };
   assert.match(page({ ...props, see: true }), /<html lang="en" data-see="on">/);
   assert.match(page({ ...props, see: false }), /<html lang="en" data-see="off">/);
+});
+
+test("both pages carry the theme button, and the saved theme is applied before any style", () => {
+  const props = { voices: [], defaultVoice: "af_heart", hosts: [], setup: false, see: true, inboxCap: 2000, view: "focus" as const };
+  const pages = [page(props), readPage({ title: "T", paragraphs: ["p"], words: 1 })];
+  for (const html of pages) {
+    assert.match(html, /<button class="theme" id="theme"/);
+    const head = html.indexOf('localStorage.getItem("kiku.theme")');
+    assert.ok(head > 0 && head < html.indexOf("<style>"), "theme is read before the first stylesheet");
+    assert.match(html, /:root\[data-theme="dark"\]/);
+    assert.match(html, /:root:not\(\[data-theme="light"\]\)/);
+  }
+});
+
+test("the focus page shows the players and the articles; /sources shows the rest", () => {
+  const props = { voices: [], defaultVoice: "af_heart", hosts: [], setup: false, see: true, inboxCap: 2000 };
+  const focus = page({ ...props, view: "focus" });
+  const manage = page({ ...props, view: "manage" });
+  assert.match(focus, /<section class="rise" id="inboxSec">/);
+  assert.match(focus, /<section class="rise" id="sources" hidden>/);
+  assert.match(focus, /<form class="compose rise" id="compose" autocomplete="off" hidden>/);
+  assert.match(manage, /<section class="rise" id="inboxSec" hidden>/);
+  assert.match(manage, /<section class="rise" id="sources">/);
+  assert.match(manage, /<form class="compose rise" id="compose" autocomplete="off">/);
+  // one face, self-hosted, and nothing else is ever declared
+  for (const html of [focus, manage, readPage({ title: "T", paragraphs: ["p"], words: 1 })]) {
+    const faces = [...html.matchAll(/font-family: "([^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual([...new Set(faces)], ["IBM Plex Mono"]);
+    assert.doesNotMatch(html, /fonts\.googleapis|fonts\.gstatic/);
+  }
 });

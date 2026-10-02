@@ -36,7 +36,7 @@ kiku/
     textfeeds.ts   RSS/Atom text feeds, the Inbox for all three source kinds, opmlUrls
     hygiene.ts     the link rules every source passes through once: pixels, redirectors, utm_
     mail/          accounts.ts (~/Kiku/accounts.json) · detect.ts (list headers) · sanitize.ts · sync.ts (IMAP)
-    ui.ts          the page, served as a string: listen/see/read, player, inbox, library, sources, setup; readPage
+    ui.ts          the page, served as a string, in one mono face: `/` is inbox + library + player, `/sources` the rest; readPage
   bin/
     kiku           CLI; --see draws instead of reads; --serve, --setup, --doctor for a Homebrew install
     doctor         the readiness report from the shell; exit 1 when a reading cannot happen
@@ -100,7 +100,8 @@ starts caught up. `mode: "read"` on a job is the third leg of `process1()`.
 
 | Route                                                                            | What                                                          |
 | -------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `GET /`                                                                          | the page — listen/see, player, library, feeds, inbox          |
+| `GET /`                                                                          | the page: the inbox and the library, with the player           |
+| `GET /sources`                                                                   | the rest of it: paste a link, sources, the phone feed address  |
 | `GET /health`                                                                    | the readiness report: every check, its fix, the export folder |
 | `POST /api/jobs` (`mode`: listen \| see, `sets`: 3 \| 5) · `GET /api/jobs[/:id]` | submit, watch progress                                        |
 | `POST /api/jobs/:id/again` · `DELETE /api/jobs/:id`                              | retry or dismiss an interrupted job                           |
@@ -112,6 +113,7 @@ starts caught up. `mode: "read"` on a job is the third leg of `process1()`.
 | `GET`/`POST`/`DELETE` `/api/podcasts…` `/api/feeds…` · `POST /api/mail/sync`     | the older per-kind routes, still served                       |
 | `POST /api/feeds/poll` · `POST /api/feeds/import`                                | every source, now; URLs or OPML, each becoming what it is     |
 | `GET /api/inbox` · `POST /api/inbox/:id/{listen,see,read,dismiss}`               | the deliberate-choice gate: the four verbs                    |
+| `POST /api/inbox/dismiss` (`ids`)                                                | dismiss the narrowed view the person confirmed                |
 | `GET /read/:id`                                                                  | a cleaned reading as a page                                   |
 | `GET /api/positions`                                                             | resume points, shared across devices                          |
 | `GET /text/:id` · `/cover.png` · `/manifest.webmanifest` · `/health`             | supporting                                                    |

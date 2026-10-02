@@ -227,3 +227,32 @@ test("applyPoll cleans a feed link of its tracking parameters", async () => {
   assert.equal(added[0].link, "https://f/post");
   assert.equal(added[0].source, "feed");
 });
+
+test("removeManyFromInbox drops exactly the ids given, in one write, and says how many", async () => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), "kiku-bulk-"));
+  const tf = new TextFeeds(home);
+  await tf.init();
+  const item = (id: string, feedId: string) => ({ id, source: "feed" as const, feedId, feedTitle: feedId, title: id, link: "", pubDate: "2026-09-30T00:00:00.000Z" });
+  await tf.addToInbox([item("a", "loud"), item("b", "loud"), item("c", "quiet")]);
+  assert.equal(await tf.removeManyFromInbox(["a", "b", "not-there"]), 2);
+  assert.deepEqual(tf.listInbox().map((i) => i.id), ["c"]);
+  const reloaded = new TextFeeds(home);
+  await reloaded.init();
+  assert.deepEqual(reloaded.listInbox().map((i) => i.id), ["c"]);
+});
+
+test("applyPoll keeps the newest post date, and a failed poll does not erase it", async () => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), "kiku-latest-"));
+  const tf = new TextFeeds(home);
+  await tf.init();
+  await tf.addFeed({ id: "f1", title: "F", feedUrl: "https://f/feed", addedAt: "2026-09-01T00:00:00.000Z", seen: [] });
+  await tf.applyPoll("f1", [
+    { guid: "old", title: "Old", link: "https://f/old", pubDate: "2024-03-02T00:00:00.000Z" },
+    { guid: "new", title: "New", link: "https://f/new", pubDate: "2024-05-09T00:00:00.000Z" },
+    { guid: "bad", title: "Undated", link: "https://f/bad", pubDate: "not a date" },
+  ]);
+  assert.equal(tf.getFeed("f1")?.latest, "2024-05-09T00:00:00.000Z");
+  await tf.applyPoll("f1", [], "Feed returned 403");
+  assert.equal(tf.getFeed("f1")?.latest, "2024-05-09T00:00:00.000Z");
+  assert.equal(tf.getFeed("f1")?.lastError, "Feed returned 403");
+});

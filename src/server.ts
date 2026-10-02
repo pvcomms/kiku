@@ -1,5 +1,5 @@
 // Kiku — paste a link, a file, or the words themselves; listen anywhere on the network.
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { serve } from "@hono/node-server";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
@@ -69,6 +69,7 @@ import {
   type Podcast,
 } from "./podcasts.ts";
 import {
+  INBOX_CAP,
   TextFeeds,
   parseArticleFeed,
   mapLimit,
@@ -753,18 +754,22 @@ function baseOf(c: {
   return `${proto}://${host}`;
 }
 
-app.get("/", async (c) =>
+// `/` is the players and the articles. `/sources` is everything that feeds them. With nothing
+// subscribed either is the setup page; `?setup=1` shows it again any time.
+const renderPage = async (c: Context, view: "focus" | "manage") =>
   c.html(
     page({
       voices: VOICES,
       defaultVoice: DEFAULT_VOICE,
       hosts: hostList(),
-      // With nothing subscribed the page is the setup page. `?setup=1` shows it again any time.
       setup: sourceCount() === 0 || c.req.query("setup") === "1",
       see: await canSee(),
+      inboxCap: INBOX_CAP,
+      view,
     }),
-  ),
-);
+  );
+app.get("/", (c) => renderPage(c, "focus"));
+app.get("/sources", (c) => renderPage(c, "manage"));
 
 // A cleaned reading as a page: the text of any item that has one, in the house type.
 app.get("/read/:id", async (c) => {
@@ -1119,10 +1124,11 @@ app.post("/api/feeds/import", async (c) => {
 
 // ---------- sources, all three kinds in one place (the setup page and the Sources section) ----------
 
+// `seen` stays on the server: it is hundreds of ids per source and the page never reads it.
 app.get("/api/sources", (c) =>
   c.json({
-    feeds: textFeeds.listFeeds(),
-    shows: podcasts.list(),
+    feeds: textFeeds.listFeeds().map(({ seen: _, ...f }) => f),
+    shows: podcasts.list().map(({ seen: _, ...s }) => s),
     mail: accounts.list().map((a) => ({
       ...a,
       lastError: mailErrors[a.name],
@@ -1210,9 +1216,24 @@ app.post("/api/mail/sync", async (c) => {
 
 // ---------- the inbox and its four verbs ----------
 
+// The list leaves out each item's summary: the page never shows it, and it was most of the weight.
 app.get("/api/inbox", (c) =>
-  c.json(textFeeds.listInbox().map((it) => ({ ...it, source: sourceOf(it) }))),
+  c.json(
+    textFeeds
+      .listInbox()
+      .map(({ summary: _, ...it }) => ({ ...it, source: sourceOf(it) })),
+  ),
 );
+
+// Dismiss many: the ids the person filtered to and confirmed. Nothing here chooses them.
+app.post("/api/inbox/dismiss", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { ids?: unknown };
+  const ids = Array.isArray(body.ids)
+    ? body.ids.filter((i): i is string => typeof i === "string")
+    : [];
+  if (ids.length === 0) return c.json({ error: "Nothing to dismiss." }, 400);
+  return c.json({ dismissed: await textFeeds.removeManyFromInbox(ids) });
+});
 
 /** What the pipeline is given for an inbox item; null for a show, which has audio already. */
 function inputFor(item: InboxItem): Input | null {

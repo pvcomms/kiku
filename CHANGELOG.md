@@ -7,6 +7,19 @@ the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Curation (spec 012). The Inbox narrows by kind, by words and by source, draws fifty at a
+  time, and dismisses a narrowed view in two presses. Sources are one list with a tab per kind,
+  a finder and four orders (a to z, most waiting, longest quiet, failing first); each row shows
+  its domain, what it has waiting, its newest post and its error. Unsubscribing is two presses
+  on the row instead of a dialog. `POST /api/inbox/dismiss` takes `{ ids }`.
+- The page is split in two. `/` is the inbox and the library: a square to press, the title
+  (an article's title is its link), and the verbs as words at the edge of the row, shown on
+  hover where there is a pointer. `/sources` is everything that feeds it: paste a link, sources,
+  the phone feed address. One typeface everywhere, IBM Plex Mono, self-hosted as before; the
+  serif and the sans are no longer loaded.
+- A light / dark button in the header and on the read page. It starts on the system setting,
+  is kept per browser, and is applied before the first paint.
+
 - A Homebrew tap (spec 011). `brew install --HEAD pvcomms/tap/kiku`, then `kiku --setup` once
   for the speech environment and the voice, then `brew services start kiku`. New `bin/kiku`
   flags `--serve`, `--setup` and `--doctor`, and `bin/warm-voice`, which `bin/setup-road` now

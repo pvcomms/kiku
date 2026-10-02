@@ -1,4 +1,4 @@
-// The one page. Warm paper, New York serif, no external requests of any kind.
+// The one page, set in one typewriter face. No external requests of any kind.
 import type { Voice } from "./tts.ts";
 
 type PageProps = {
@@ -9,6 +9,10 @@ type PageProps = {
   setup: boolean;
   /** A local model is available to draw with. When it is not, the page hides `see`. */
   see: boolean;
+  /** The inbox keeps this many; past it the oldest fall off. The page says so when it is full. */
+  inboxCap: number;
+  /** `focus` is `/`: the players and the articles, nothing else. `manage` is `/sources`: the rest. */
+  view: "focus" | "manage";
 };
 
 const esc = (s: string) =>
@@ -20,53 +24,114 @@ const esc = (s: string) =>
       ] as string,
   );
 
-/** Fonts, palette and the base rules, shared by the page and the read view. */
-const BASE_CSS = `
-  @font-face { font-family: "Instrument Serif"; font-style: normal; font-weight: 400; font-display: swap; src: url(/assets/fonts/instrument-serif-normal.woff2) format("woff2"); }
-  @font-face { font-family: "Instrument Serif"; font-style: italic; font-weight: 400; font-display: swap; src: url(/assets/fonts/instrument-serif-italic.woff2) format("woff2"); }
-  @font-face { font-family: "General Sans"; font-style: normal; font-weight: 400; font-display: swap; src: url(/assets/fonts/general-sans-400.woff2) format("woff2"); }
-  @font-face { font-family: "General Sans"; font-style: normal; font-weight: 500; font-display: swap; src: url(/assets/fonts/general-sans-500.woff2) format("woff2"); }
-  @font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url(/assets/fonts/jetbrains-mono-400.woff2) format("woff2"); }
-  @font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 500; font-display: swap; src: url(/assets/fonts/jetbrains-mono-500.woff2) format("woff2"); }
-  :root {
-    color-scheme: light dark;
-    --paper: #F7F6F3; --paper-2: #F0EEE9; --paper-3: #E7E4DD;
+// The two palettes. The page follows the system unless the person picks one with the theme button,
+// which sets data-theme on <html>; the dark block is written twice so either route reaches it.
+const PAPER_LIGHT = "#F7F6F3";
+const PAPER_DARK = "#141311";
+const LIGHT = `
+    color-scheme: light;
+    --paper: ${PAPER_LIGHT}; --paper-2: #F0EEE9; --paper-3: #E7E4DD;
     --ink: #111111; --ink-2: #6B6863; --ink-3: #9C9891;
-    --line: #E4E1DA; --accent: #B5532A; --accent-ink: #FBF7F0;
-    --display: "Instrument Serif", ui-serif, "New York", "Iowan Old Style", Georgia, serif;
-    --sans: "General Sans", "Avenir Next", "Helvetica Neue", sans-serif;
-    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --line: #E4E1DA; --accent: #B5532A; --accent-ink: #FBF7F0;`;
+const DARK = `
+    color-scheme: dark;
+    --paper: ${PAPER_DARK}; --paper-2: #1C1B18; --paper-3: #262420;
+    --ink: #EDEAE3; --ink-2: #A39F97; --ink-3: #6F6B64;
+    --line: #2E2C27; --accent: #D0673E; --accent-ink: #1A1410;`;
+
+/** The face, the palette and the base rules, shared by the page and the read view. */
+const BASE_CSS = `
+  @font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url(/assets/fonts/ibm-plex-mono-400.woff2) format("woff2"); }
+  @font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: swap; src: url(/assets/fonts/ibm-plex-mono-500.woff2) format("woff2"); }
+  :root {${LIGHT}
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     --ease: cubic-bezier(0.16, 1, 0.3, 1);
-    --shadow: 0 2px 8px rgba(0,0,0,0.04);
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --paper: #141311; --paper-2: #1C1B18; --paper-3: #262420;
-      --ink: #EDEAE3; --ink-2: #A39F97; --ink-3: #6F6B64;
-      --line: #2E2C27; --accent: #D0673E; --accent-ink: #1A1410;
-      --shadow: 0 2px 8px rgba(0,0,0,0.3);
-    }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {${DARK}
+  } }
+  :root[data-theme="dark"] {${DARK}
   }
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 320ms; animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
   * { box-sizing: border-box; }
-  html, body { color-scheme: light dark; background: var(--paper); color: var(--ink); }
-  body { margin: 0; font-family: var(--sans); font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
-  main { max-width: 620px; margin: 0 auto; }
+  html, body { background: var(--paper); color: var(--ink); }
+  body { color-scheme: inherit; margin: 0; font: 14px/1.7 var(--mono); -webkit-font-smoothing: antialiased; font-variant-ligatures: none; }
+  main { max-width: 640px; margin: 0 auto; }
   a { color: inherit; }
   ::selection { background: var(--paper-3); }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .rise { opacity: 0; transform: translateY(12px); animation: rise 600ms var(--ease) forwards; }
-  .rise:nth-child(2) { animation-delay: 60ms; } .rise:nth-child(3) { animation-delay: 120ms; }
-  .rise:nth-child(4) { animation-delay: 180ms; } .rise:nth-child(5) { animation-delay: 240ms; }
+  .rise { opacity: 0; transform: translateY(8px); animation: rise 500ms var(--ease) forwards; }
+  .rise:nth-child(2) { animation-delay: 50ms; } .rise:nth-child(3) { animation-delay: 100ms; }
+  .rise:nth-child(4) { animation-delay: 150ms; } .rise:nth-child(5) { animation-delay: 200ms; }
   @keyframes rise { to { opacity: 1; transform: none; } }
   @media (prefers-reduced-motion: reduce) { .rise { animation: none; opacity: 1; transform: none; } * { transition: none !important; } }
-  header { display: flex; align-items: baseline; justify-content: space-between; padding: 40px 0 8px; }
-  .wordmark { font-family: var(--display); font-size: 48px; letter-spacing: -0.02em; line-height: 1; margin: 0; font-weight: 400; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 36px 0 0; }
+  .wordmark { font: 500 15px/1 var(--mono); margin: 0; letter-spacing: 0; }
   .wordmark a { text-decoration: none; }
-  footer { padding: 56px 0 20px; font: 12px/1.6 var(--mono); color: var(--ink-3); }
+  .htools { display: inline-flex; align-items: center; gap: 18px; }
+  .nav { display: inline-flex; gap: 16px; font-size: 12px; }
+  .nav a { color: var(--ink-3); text-decoration: none; transition: color 160ms var(--ease); }
+  .nav a:hover, .nav a.on { color: var(--ink); }
+  .theme { width: 32px; height: 32px; flex: none; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--ink-2); display: grid; place-items: center; padding: 0; cursor: pointer; transition: color 160ms var(--ease), border-color 160ms var(--ease), background-color 160ms var(--ease), transform 160ms var(--ease); }
+  .theme:hover { color: var(--ink); border-color: var(--ink-3); background: var(--paper-2); }
+  .theme:active { transform: scale(0.94); }
+  .theme svg { width: 15px; height: 15px; display: none; }
+  .theme[data-mode="light"] .sun, .theme[data-mode="dark"] .moon, .theme[data-mode="system"] .auto { display: block; animation: turn 420ms var(--ease); }
+  @keyframes turn { from { opacity: 0; transform: rotate(-60deg) scale(0.8); } }
 `;
 
+/** Runs in <head> before anything paints, so a chosen theme never flashes the other one first. */
+const THEME_HEAD = `<script>try{var t=localStorage.getItem("kiku.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>`;
+
+const THEME_METAS = `<meta name="theme-color" content="${PAPER_LIGHT}" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="${PAPER_DARK}" media="(prefers-color-scheme: dark)">`;
+
+const THEME_BUTTON = `<button class="theme" id="theme" type="button" data-mode="system" aria-label="Theme">
+      <svg class="sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.06 1.06M11.54 11.54l1.06 1.06M3.4 12.6l1.06-1.06M11.54 4.46l1.06-1.06"/></svg>
+      <svg class="moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 9.7A5.6 5.6 0 0 1 6.3 2.5a5.6 5.6 0 1 0 7.2 7.2z"/></svg>
+      <svg class="auto" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="8" r="5.6"/><path d="M8 2.4a5.6 5.6 0 0 1 0 11.2z" fill="currentColor" stroke="none"/></svg>
+    </button>`;
+
+/**
+ * The theme button: system, then the opposite of the system, then the system's own colour picked
+ * explicitly, then back. From the system setting the first press always changes what you see.
+ * Stored per browser in localStorage, like the playback speed; other open tabs follow.
+ */
+const THEME_JS = `<script>
+(() => {
+  const root = document.documentElement, btn = document.getElementById('theme');
+  if (!btn) return;
+  const mq = matchMedia('(prefers-color-scheme: dark)');
+  const still = matchMedia('(prefers-reduced-motion: reduce)');
+  const metas = Array.from(document.querySelectorAll('meta[name="theme-color"]'));
+  metas.forEach((m) => { m.dataset.orig = m.content; });
+  const saved = () => { try { const t = localStorage.getItem('kiku.theme'); return t === 'light' || t === 'dark' ? t : 'system'; } catch { return 'system'; } };
+  const sys = () => (mq.matches ? 'dark' : 'light');
+  const nextOf = (mode) => mode === 'system' ? (sys() === 'dark' ? 'light' : 'dark') : mode !== sys() ? sys() : 'system';
+  const name = (mode) => mode === 'system' ? 'the system setting (' + sys() + ')' : mode;
+  function paint(mode) {
+    if (mode === 'system') delete root.dataset.theme; else root.dataset.theme = mode;
+    btn.dataset.mode = mode;
+    const text = 'Theme: ' + name(mode) + '. Switch to ' + name(nextOf(mode)) + '.';
+    btn.setAttribute('aria-label', text); btn.title = text;
+    const paper = getComputedStyle(root).getPropertyValue('--paper').trim();
+    metas.forEach((m) => { m.content = mode === 'system' ? m.dataset.orig : paper; });
+  }
+  btn.addEventListener('click', () => {
+    const mode = nextOf(btn.dataset.mode);
+    try { if (mode === 'system') localStorage.removeItem('kiku.theme'); else localStorage.setItem('kiku.theme', mode); } catch {}
+    // A crossfade when the browser can draw one; a hidden or throttled tab skips it and just repaints.
+    if (!document.startViewTransition || still.matches || document.visibilityState !== 'visible') return paint(mode);
+    const t = document.startViewTransition(() => paint(mode));
+    t.ready.catch(() => {}); t.finished.catch(() => {}); t.updateCallbackDone.catch(() => {});
+  });
+  mq.addEventListener('change', () => paint(btn.dataset.mode));
+  addEventListener('storage', (e) => { if (e.key === 'kiku.theme') paint(saved()); });
+  paint(saved());
+})();
+</script>`;
+
 const ICON = {
-  play: `<svg viewBox="0 0 14 14"><path d="M3 1.5v11l9-5.5z" fill="currentColor"/></svg>`,
+  play: `<svg viewBox="0 0 14 14"><path d="M3.5 2v10l8-5z" fill="currentColor"/></svg>`,
   see: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6" cy="8" r="4.2"/><circle cx="10" cy="8" r="4.2"/></svg>`,
   read: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 4h10M3 8h10M3 12h6"/></svg>`,
   x: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 4l8 8M12 4l-8 8"/></svg>`,
@@ -79,6 +144,8 @@ export function page({
   hosts,
   setup,
   see,
+  inboxCap,
+  view,
 }: PageProps): string {
   const voiceOptions = voices
     .map(
@@ -87,11 +154,16 @@ export function page({
     )
     .join("");
   const hostsJson = JSON.stringify(hosts);
+  const manage = setup || view === "manage";
+  // The focus page hides what it does not need rather than leaving it out: the script finds the
+  // same elements either way, and a link shared to the page (?u=) still has a form to submit.
+  const only = (where: "focus" | "manage") =>
+    (where === "focus") === manage ? " hidden" : "";
 
   const sources = `
-  <section class="rise" id="sources">
+  <section class="rise" id="sources"${only("manage")}>
     <h2>Sources <small id="sourceCount"></small></h2>
-    <form class="feedbox" id="addForm" autocomplete="off">
+    <form class="box" id="addForm" autocomplete="off">
       <p>A blog, a newsletter, a news site, a podcast: paste its feed address. Kiku tells a show from writing by what is in it; say which if it should not guess. Only what is published after this moment reaches the Inbox.</p>
       <div class="url">
         <input class="text" type="url" id="addUrl" placeholder="https://interconnects.ai/feed" required>
@@ -114,8 +186,10 @@ export function page({
       </details>
     </form>
 
-    <form class="feedbox" id="mailForm" autocomplete="off" style="margin-top:16px">
-      <p>A mailbox, for the newsletters that only arrive by mail — every paid Substack among them. Read over IMAP from this machine; the password goes in <code>~/Kiku/accounts.json</code> and is never shown again.</p>
+    <details class="ways mailbox"${setup ? " open" : ""}>
+    <summary>a mailbox, for newsletters that only arrive by mail</summary>
+    <form class="box" id="mailForm" autocomplete="off">
+      <p>Read over IMAP from this machine; the password goes in <code>~/Kiku/accounts.json</code> and is never shown again.</p>
       <div class="row">
         <select id="mailPreset" aria-label="Mail provider">
           <option value="proton">Proton, through Bridge</option>
@@ -133,16 +207,30 @@ export function page({
       <div class="row"><span class="grow"></span><button class="btn-2" type="submit">add mailbox</button></div>
       <div class="err" id="mailErr" role="status"></div>
     </form>
+    </details>
 
-    <div id="mailList"></div>
-    <div id="shows"></div>
-    <div id="feedsList"></div>
+    <div class="tools-row" id="srcTools" hidden>
+      <div class="seg" id="srcTabs" role="radiogroup" aria-label="Which sources">
+        <button type="button" class="on" data-tab="feeds" role="radio" aria-checked="true">writing <span></span></button>
+        <button type="button" data-tab="shows" role="radio" aria-checked="false">shows <span></span></button>
+        <button type="button" data-tab="mail" role="radio" aria-checked="false">mail <span></span></button>
+      </div>
+      <input class="text find" type="search" id="srcFind" placeholder="find a source" aria-label="Find a source" autocomplete="off" spellcheck="false">
+      <select id="srcSort" class="kind" aria-label="Order">
+        <option value="name">a to z</option>
+        <option value="waiting">most waiting</option>
+        <option value="quiet">longest quiet</option>
+        <option value="failing">failing first</option>
+      </select>
+    </div>
+    <div id="srcList"></div>
+    <button class="more-btn" type="button" id="srcMore" hidden></button>
   </section>`;
 
   const phone = `
-  <section class="rise">
+  <section class="rise" id="phone"${only("manage")}>
     <h2>On your phone</h2>
-    <div class="feedbox">
+    <div class="box">
       <p>Follow this private feed in any podcast app. Each reading appears as an episode, plays in the background, and keeps its place across your devices.</p>
       <div class="url"><code id="feedUrl"></code><button class="btn-2" type="button" id="copy">copy</button></div>
       <ol>
@@ -160,14 +248,13 @@ export function page({
   <div class="ready rise" id="ready" hidden role="status"></div>
   ${sources}
   <section class="rise" id="setupDone" hidden>
-    <div class="feedbox"><p>That is a source. <a href="/">Open the inbox.</a></p></div>
+    <div class="box"><p>That is a source. <a href="/">Open the inbox.</a></p></div>
   </section>`
     : `
-  <p class="lede rise">What you subscribed to, and nothing else. Listen to it, see it, or read it.</p>
   <div class="ready rise" id="ready" hidden role="status"></div>
 
-  <form class="compose rise" id="compose" autocomplete="off">
-    <textarea id="input" name="input" placeholder="or paste a link, a file, or the words themselves" spellcheck="false" aria-label="Link or text"></textarea>
+  <form class="compose rise" id="compose" autocomplete="off"${only("manage")}>
+    <textarea id="input" name="input" placeholder="a link, a file, or the words themselves" spellcheck="false" aria-label="Link or text"></textarea>
     <div class="row">
       <div class="seg" role="radiogroup" aria-label="What to make">
         <button type="button" class="on" data-mode="listen" role="radio" aria-checked="true">listen</button>
@@ -196,28 +283,49 @@ export function page({
     <div id="jobs"></div>
   </section>
 
-  <section class="rise">
+  <section class="rise" id="inboxSec"${only("focus")}>
     <h2>Inbox <small id="inboxCount"></small></h2>
+    <div class="tools-row" id="inboxTools" hidden>
+      <div class="seg" id="inboxKinds" role="radiogroup" aria-label="Which kind">
+        <button type="button" class="on" data-kind="all" role="radio" aria-checked="true">all <span></span></button>
+        <button type="button" data-kind="feed" role="radio" aria-checked="false">writing <span></span></button>
+        <button type="button" data-kind="show" role="radio" aria-checked="false">episodes <span></span></button>
+        <button type="button" data-kind="mail" role="radio" aria-checked="false">letters <span></span></button>
+      </div>
+      <input class="text find" type="search" id="inboxFind" placeholder="filter" aria-label="Filter the inbox" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="scope" id="inboxScope" hidden>
+      <span id="scopeText"></span>
+      <button type="button" class="link" id="scopeClear">show everything</button>
+      <span class="grow"></span>
+      <button type="button" class="btn-2 bulk" id="bulk"></button>
+    </div>
+    <div class="err quiet" id="inboxErr" role="status"></div>
     <div id="inbox"><div class="empty">Nothing new. What your sources publish from now on lands here.</div></div>
+    <button class="more-btn" type="button" id="inboxMore" hidden></button>
   </section>
 
-  <section class="rise">
+  <section class="rise" id="librarySec"${only("focus")}>
     <h2>Library <small id="count"></small></h2>
     <div id="library"><div class="empty">Nothing yet.</div></div>
   </section>
   ${sources}
   ${phone}`;
 
+  const nav = setup
+    ? ""
+    : `<nav class="nav" aria-label="Pages"><a href="/"${manage ? "" : ' class="on"'}>inbox</a><a href="/sources"${manage ? ' class="on"' : ""}>sources</a></nav>`;
+
   return `<!doctype html>
 <html lang="en" data-see="${see ? "on" : "off"}">
 <head>
 <meta charset="utf-8">
+${THEME_HEAD}
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Kiku">
-<meta name="theme-color" content="#F3EEE4" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#171614" media="(prefers-color-scheme: dark)">
+${THEME_METAS}
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/cover.png">
 <link rel="apple-touch-icon" href="/cover.png">
@@ -225,152 +333,165 @@ export function page({
 <style>
   ${BASE_CSS}
   body { padding: 0 20px calc(140px + env(safe-area-inset-bottom)); }
-  .status { font: 12px/1 var(--mono); color: var(--ink-2); letter-spacing: 0.02em; display: inline-flex; align-items: center; gap: 8px; }
-  .status i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); display: inline-block; }
-  .status i.busy { animation: pulse 1.4s ease-in-out infinite; }
-  @keyframes pulse { 50% { opacity: 0.25; } }
-  .lede { color: var(--ink-2); margin: 0 0 28px; font-family: var(--display); font-size: 22px; line-height: 1.35; letter-spacing: -0.005em; }
+  .lede { color: var(--ink-2); margin: 40px 0 0; }
 
-  .compose { border: 1px solid var(--line); border-radius: 12px; background: var(--paper-2); padding: 8px; transition: border-color 200ms var(--ease), box-shadow 200ms var(--ease); }
-  .compose.drag { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(181,84,45,0.12); }
-  textarea {
-    width: 100%; min-height: 96px; resize: vertical; border: 0; background: transparent; color: var(--ink);
-    font: 17px/1.55 var(--sans); padding: 12px 12px 4px; display: block;
-  }
-  textarea::placeholder { color: var(--ink-3); }
-  textarea:focus { outline: none; }
-  .compose:focus-within { border-color: var(--ink-3); }
-  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 4px 4px; }
-  .row .grow { flex: 1 1 auto; }
-  .row[hidden] { display: none; }
-  select, .btn, .btn-2 {
-    height: 44px; border-radius: 6px; font-family: var(--sans); font-size: 15px; font-weight: 500; cursor: pointer;
-    transition: transform 160ms var(--ease), background-color 160ms var(--ease), color 160ms var(--ease), border-color 160ms var(--ease);
-  }
-  select { border: 1px solid var(--line); background: var(--paper); color: var(--ink); padding: 0 32px 0 12px; appearance: none; -webkit-appearance: none;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%236B665E' stroke-width='1.5'/></svg>"); background-repeat: no-repeat; background-position: right 12px center; max-width: 100%; }
-  select.speed { width: 84px; }
-  select.kind { height: 40px; font-size: 14px; }
-  select.sets { width: 96px; }
-  .seg { display: inline-flex; height: 44px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--paper); }
-  .seg button { border: 0; background: transparent; color: var(--ink-2); font: 500 15px var(--sans); padding: 0 14px; cursor: pointer; transition: background-color 160ms var(--ease), color 160ms var(--ease); }
+  section { padding-top: 56px; }
+  h2 { font: 500 11px/1 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  h2 small { font-weight: 400; letter-spacing: 0; text-transform: none; }
+  h3 { font: 500 11px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin: 28px 0 6px; }
+  .empty { color: var(--ink-3); padding: 6px 0 0; }
+
+  /* one control height, one radius, one weight */
+  select, .btn, .btn-2, .text, .seg { height: 36px; border-radius: 4px; font: 13px var(--mono); }
+  select, .btn, .btn-2 { cursor: pointer; transition: transform 160ms var(--ease), background-color 160ms var(--ease), color 160ms var(--ease), border-color 160ms var(--ease); }
+  select { border: 1px solid var(--line); background: var(--paper); color: var(--ink); padding: 0 30px 0 10px; appearance: none; -webkit-appearance: none; max-width: 100%;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%239C9891' stroke-width='1.4'/></svg>"); background-repeat: no-repeat; background-position: right 10px center; }
+  select.speed { width: 80px; }
+  select.sets { width: 92px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); overflow: hidden; background: var(--paper); }
+  .seg button { border: 0; background: transparent; color: var(--ink-2); font: inherit; padding: 0 12px; cursor: pointer; white-space: nowrap; transition: background-color 160ms var(--ease), color 160ms var(--ease); }
   .seg button + button { border-left: 1px solid var(--line); }
   .seg button:hover { color: var(--ink); }
   .seg button.on { background: var(--ink); color: var(--paper); }
   .seg button:focus-visible { outline-offset: -3px; }
-  .btn { border: 0; background: var(--ink); color: var(--paper); padding: 0 20px; font-weight: 500; }
+  .seg button span { color: var(--ink-3); margin-left: 4px; }
+  .seg button span:empty { display: none; }
+  .seg button.on span { color: color-mix(in srgb, var(--paper) 60%, transparent); }
+  .seg button[hidden] { display: none; }
+  .btn { border: 0; background: var(--ink); color: var(--paper); padding: 0 16px; }
   .btn:hover { background: var(--accent); color: var(--accent-ink); }
   .btn:active { transform: scale(0.98); }
   .btn[disabled] { opacity: 0.5; cursor: default; }
-  .btn-2 { border: 1px solid var(--line); background: var(--paper); color: var(--ink-2); padding: 0 14px; display: inline-flex; align-items: center; gap: 8px; }
+  .btn-2 { border: 1px solid var(--line); background: var(--paper); color: var(--ink-2); padding: 0 12px; display: inline-flex; align-items: center; gap: 8px; }
   .btn-2:hover { color: var(--ink); border-color: var(--ink-3); }
-  .btn-2 svg { width: 16px; height: 16px; }
+  .btn-2 svg { width: 14px; height: 14px; }
+  .text { border: 1px solid var(--line); background: var(--paper); color: var(--ink); padding: 0 10px; min-width: 0; }
+  .text::placeholder, textarea::placeholder { color: var(--ink-3); }
+  .text:focus { outline: none; border-color: var(--ink-3); }
+  .find { flex: 1 1 140px; }
+  .find::-webkit-search-cancel-button { cursor: pointer; }
   input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
-  .filename { font: 12px var(--mono); color: var(--ink-2); padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
-  .err { color: var(--accent); font-size: 15px; margin: 10px 4px 0; min-height: 1.4em; }
+  .filename { font-size: 12px; color: var(--ink-2); padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+  .err { color: var(--accent); font-size: 13px; margin: 8px 0 0; min-height: 1.5em; }
   .err.ok { color: var(--ink-2); }
+  .err.quiet { margin: 0 0 10px; }
+  .err.quiet:empty { display: none; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 0 0; }
+  .row .grow, .scope .grow { flex: 1 1 auto; }
+  .row[hidden], .tools-row[hidden], .scope[hidden], .bulk[hidden], .more-btn[hidden] { display: none; }
 
-  section { padding-top: 48px; }
-  h2 { font: 12px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2); margin: 0 0 14px; font-weight: 500; display: flex; justify-content: space-between; align-items: baseline; }
-  h2 small { letter-spacing: 0; text-transform: none; color: var(--ink-3); }
-  h3 { font: 12px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin: 28px 0 6px; font-weight: 500; }
-  .empty { color: var(--ink-3); font-style: italic; padding: 8px 0 0; }
+  .compose { margin-top: 40px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper-2); padding: 8px; transition: border-color 200ms var(--ease), box-shadow 200ms var(--ease); }
+  .compose.drag { border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent); }
+  .compose:focus-within { border-color: var(--ink-3); }
+  textarea { width: 100%; min-height: 88px; resize: vertical; border: 0; background: transparent; color: var(--ink); font: 14px/1.7 var(--mono); padding: 10px 10px 4px; display: block; }
+  textarea:focus { outline: none; }
 
-  .job { padding: 14px 0; border-top: 1px solid var(--line); }
+  .tools-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 12px; }
+  #sources .tools-row { margin-top: 28px; }
+  .tools-row select.kind { width: auto; }
+  .scope { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 0 0 10px; font-size: 12px; color: var(--ink-2); }
+  .link { border: 0; background: none; padding: 0; font: inherit; color: var(--ink-3); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line); cursor: pointer; transition: color 160ms var(--ease), text-decoration-color 160ms var(--ease); }
+  .link:hover { color: var(--ink); text-decoration-color: currentColor; }
+  .bulk { height: 30px; font-size: 12px; }
+  .bulk.arm, .icon.arm { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .more-btn { display: block; width: 100%; margin-top: 12px; height: 36px; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--ink-2); font: 12px var(--mono); cursor: pointer; transition: color 160ms var(--ease), border-color 160ms var(--ease), background-color 160ms var(--ease); }
+  .more-btn:hover { color: var(--ink); border-color: var(--ink-3); background: var(--paper-2); }
+  .leaving { opacity: 0; transform: translateX(12px); transition: opacity 180ms var(--ease), transform 180ms var(--ease); pointer-events: none; }
+
+  /* a row: a square to press, the words, and the verbs at the far edge */
+  .item, .feed-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 14px; align-items: start; padding: 14px 0; border-top: 1px solid var(--line); }
+  .feed-row.plain { grid-template-columns: minmax(0, 1fr) auto; }
+  .item:last-child, .feed-row:last-child, .show:last-child .feed-row { border-bottom: 1px solid var(--line); }
+  .show .feed-row { border-bottom: 0; }
+  .item.playing .t { color: var(--accent); }
+  .item .t, .feed-row .t { display: block; font-weight: 500; line-height: 1.5; color: var(--ink); text-decoration: none; }
+  a.t:hover { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--ink-3); }
+  .item .body, .feed-row .body { min-width: 0; }
+  .item .m, .feed-row .m { display: block; font-size: 12px; line-height: 1.6; color: var(--ink-3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .m .done { color: var(--accent); }
+  .feed-row .m .fail { color: var(--accent); }
+  .srcName { color: inherit; cursor: pointer; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 3px; transition: color 160ms var(--ease), text-decoration-color 160ms var(--ease); }
+  .srcName:hover { color: var(--ink); text-decoration-color: currentColor; }
+  .srcName.wait { color: var(--ink-2); }
+  .play { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); color: var(--ink); display: grid; place-items: center; cursor: pointer; padding: 0; margin-top: 1px; text-decoration: none; transition: transform 160ms var(--ease), background-color 160ms var(--ease), color 160ms var(--ease), border-color 160ms var(--ease); }
+  .play:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .play:active { transform: scale(0.94); }
+  .play svg { width: 12px; height: 12px; display: block; }
+  .play.glyph { font-size: 13px; font-weight: 500; }
+  .acts { display: flex; align-items: center; gap: 2px; margin-top: 4px; }
+  .act { border: 0; background: none; font: 12px/1 var(--mono); color: var(--ink-3); padding: 7px 7px; border-radius: 4px; cursor: pointer; text-decoration: none; transition: color 160ms var(--ease), background-color 160ms var(--ease); }
+  .act:hover { color: var(--ink); background: var(--paper-2); }
+  .act[hidden] { display: none; }
+  .icon { width: 30px; height: 30px; border: 0; background: transparent; color: var(--ink-3); border-radius: 4px; cursor: pointer; display: grid; place-items: center; padding: 0; transition: color 160ms var(--ease), background-color 160ms var(--ease); }
+  .icon:hover { color: var(--ink); background: var(--paper-2); }
+  .icon svg { width: 14px; height: 14px; }
+  .icon.arm { width: auto; padding: 0 8px; font: 500 12px var(--mono); }
+  @media (hover: hover) and (pointer: fine) {
+    .item .acts { opacity: 0; transition: opacity 160ms var(--ease); }
+    .item:hover .acts, .item:focus-within .acts { opacity: 1; }
+  }
+  html[data-see="off"] [data-mode="see"], html[data-see="off"] .act.see { display: none; }
+
+  .job { padding: 12px 0; border-top: 1px solid var(--line); }
   .job:last-child { border-bottom: 1px solid var(--line); }
-  .job .t { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--display); font-size: 20px; line-height: 1.3; }
-  .job .m { font: 12px/1.4 var(--mono); color: var(--ink-2); margin-top: 4px; display: flex; justify-content: space-between; gap: 12px; }
-  .bar { height: 2px; background: var(--line); margin-top: 10px; overflow: hidden; border-radius: 1px; }
+  .job .t { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .job .m { font-size: 12px; color: var(--ink-3); margin-top: 2px; display: flex; justify-content: space-between; gap: 12px; }
+  .bar { height: 2px; background: var(--line); margin-top: 10px; overflow: hidden; }
   .bar b { display: block; height: 100%; width: 100%; background: var(--accent); transform-origin: left; transform: scaleX(0); transition: transform 700ms var(--ease); }
-  .job.error .t { color: var(--accent); }
-  .job.error .m { color: var(--accent); }
-  .job .m .acts { display: inline-flex; gap: 6px; flex: none; }
-  .job .m button { font: 12px/1 var(--mono); color: var(--ink); background: var(--paper-2); border: 1px solid var(--line); border-radius: 4px; padding: 5px 9px; cursor: pointer; transition: transform 160ms var(--ease), background-color 160ms var(--ease), border-color 160ms var(--ease); }
-  .job .m button:hover { background: var(--paper-3); border-color: var(--ink-3); }
-  .job .m button:active { transform: scale(0.98); }
+  .job.error .t, .job.error .m { color: var(--accent); }
+  .job .m .acts { display: inline-flex; gap: 6px; flex: none; margin: 0; }
+  .job .m button { font: 12px/1 var(--mono); color: var(--ink); background: var(--paper-2); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; cursor: pointer; }
+  .job .m button:hover { border-color: var(--ink-3); }
 
-  .ready { margin: -12px 0 28px; padding: 12px 14px; border: 1px solid var(--accent); border-radius: 8px; font: 12px/1.7 var(--mono); color: var(--accent); }
+  .ready { margin: 40px 0 0; padding: 12px 14px; border: 1px solid var(--accent); border-radius: 4px; font-size: 12px; line-height: 1.7; color: var(--accent); }
   .ready.soft { border-color: var(--line); }
   .ready .soft { color: var(--ink-2); }
   .ready div + div { margin-top: 6px; }
   .ready code { display: block; color: var(--ink); user-select: all; white-space: pre-wrap; word-break: break-word; }
-  .item .pd { color: var(--ink-3); }
 
-  .item { display: grid; grid-template-columns: 40px 1fr auto; gap: 14px; align-items: center; padding: 14px 6px; margin: 0 -6px; border-top: 1px solid var(--line); border-radius: 8px; transition: background-color 160ms var(--ease); }
-  .item:last-child { border-bottom: 1px solid var(--line); }
-  .item:hover { background: var(--paper-2); }
-  .item.playing .t { color: var(--accent); }
-  .play { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--paper); color: var(--ink); display: grid; place-items: center; cursor: pointer; padding: 0; transition: transform 160ms var(--ease), background-color 160ms var(--ease), color 160ms var(--ease), border-color 160ms var(--ease); text-decoration: none; }
-  .play:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
-  .play:active { transform: scale(0.94); }
-  .play svg { width: 14px; height: 14px; display: block; }
-  .item .body { min-width: 0; cursor: pointer; }
-  .item .t { display: block; font-family: var(--display); font-size: 21px; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .item .m { font: 12px/1.4 var(--mono); color: var(--ink-2); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .item .m .done { color: var(--accent); }
-  .item .m .src { color: var(--ink-3); }
-  .more { display: flex; gap: 2px; }
-  .icon { width: 34px; height: 34px; border: 0; background: transparent; color: var(--ink-3); border-radius: 6px; cursor: pointer; display: grid; place-items: center; transition: color 160ms var(--ease), background-color 160ms var(--ease); text-decoration: none; }
-  .icon:hover { color: var(--ink); background: var(--paper-3); }
-  .icon svg { width: 16px; height: 16px; }
-  .icon[hidden] { display: none; }
-  html[data-see="off"] [data-mode="see"], html[data-see="off"] .icon.see { display: none; }
-
-  .feedbox { border: 1px solid var(--line); border-radius: 10px; background: var(--paper-2); padding: 16px; }
-  .feedbox p { margin: 0 0 10px; color: var(--ink-2); font-size: 15px; }
-  .feedbox p:last-child { margin: 0; }
-  .feedbox code { font: 13px var(--mono); }
+  .box { border: 1px solid var(--line); border-radius: 4px; background: var(--paper-2); padding: 16px; }
+  .box p { margin: 0 0 10px; color: var(--ink-2); font-size: 13px; }
+  .box p:last-child { margin: 0; }
+  .box code { font-size: 12px; }
   .url { display: flex; gap: 8px; align-items: center; margin: 12px 0; }
-  .url code { flex: 1; font: 13px/1.4 var(--mono); background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .url .btn-2 { height: 40px; }
-  ol { padding-left: 20px; margin: 6px 0 0; color: var(--ink-2); font-size: 15px; }
-  ol li { margin: 4px 0; }
-  .alts { font: 12px/1.6 var(--mono); color: var(--ink-3); margin-top: 12px; }
-  .ways { margin-top: 4px; }
-  .ways summary { font: 13px var(--sans); color: var(--ink-2); cursor: pointer; padding: 6px 0; }
-  .ways summary:hover { color: var(--ink); }
-  .ways textarea { border: 1px solid var(--line); border-radius: 6px; background: var(--paper); font: 13px/1.5 var(--mono); min-height: 88px; margin: 8px 0 4px; padding: 10px 12px; }
-  .check { font-size: 14px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
-
-  .text { height: 44px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--ink); font: 15px var(--sans); padding: 0 12px; min-width: 0; }
-  .text::placeholder { color: var(--ink-3); }
-  .text:focus { outline: none; border-color: var(--ink-3); }
+  .url code { flex: 1; font-size: 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 4px; padding: 9px 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .url .text { flex: 1; }
-  .show-head { display: flex; align-items: center; gap: 12px; padding: 14px 6px; margin: 0 -6px; border-top: 1px solid var(--line); border-radius: 8px; cursor: pointer; transition: background-color 160ms var(--ease); }
-  .show:last-child .show-head { border-bottom: 1px solid var(--line); }
-  .show-head:hover { background: var(--paper-2); }
-  .show-head .art { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; background: var(--paper-3); flex-shrink: 0; }
-  .show-head .t { flex: 1; font-family: var(--display); font-size: 21px; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  ol { padding-left: 20px; margin: 6px 0 0; color: var(--ink-2); font-size: 13px; }
+  ol li { margin: 4px 0; }
+  .alts { font-size: 12px; color: var(--ink-3); margin-top: 12px; }
+  .ways { margin-top: 4px; }
+  .ways > summary { font-size: 12px; color: var(--ink-2); cursor: pointer; padding: 6px 0; }
+  .ways > summary:hover { color: var(--ink); }
+  .ways textarea { border: 1px solid var(--line); border-radius: 4px; background: var(--paper); font-size: 13px; min-height: 88px; margin: 8px 0 4px; padding: 10px; }
+  .mailbox { margin-top: 12px; }
+  .mailbox[open] > summary { margin-bottom: 8px; }
+  .check { font-size: 13px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+  .show-head { cursor: pointer; }
+  .feed-row .art { width: 34px; height: 34px; border-radius: 4px; object-fit: cover; background: var(--paper-3); margin-top: 1px; }
+  .episodes { padding-left: 48px; }
   .episodes .item:first-child { border-top: none; }
 
-  .feed-row { display: flex; align-items: center; gap: 12px; padding: 14px 6px; margin: 0 -6px; border-top: 1px solid var(--line); border-radius: 8px; transition: background-color 160ms var(--ease); }
-  .feed-row:last-child { border-bottom: 1px solid var(--line); }
-  .feed-row:hover { background: var(--paper-2); }
-  .feed-row .body { flex: 1 1 auto; min-width: 0; }
-  .feed-row .t { display: block; font-family: var(--display); font-size: 21px; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .feed-row .m { font: 12px/1.4 var(--mono); color: var(--ink-2); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .feed-row .m.error { color: var(--accent); }
-
-  .player { position: fixed; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--paper-2) 88%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-top: 1px solid var(--line); padding: 12px 20px calc(12px + env(safe-area-inset-bottom)); transform: translateY(110%); transition: transform 500ms var(--ease); }
+  .player { position: fixed; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--paper) 92%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-top: 1px solid var(--line); padding: 10px 20px calc(10px + env(safe-area-inset-bottom)); transform: translateY(110%); transition: transform 500ms var(--ease); }
   .player.on { transform: none; }
-  .player .in { max-width: 620px; margin: 0 auto; }
-  .player .prow { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
-  .player .t { display: block; font-family: var(--display); font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .player .in { max-width: 640px; margin: 0 auto; }
+  .player .prow { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+  .player .t { display: block; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .player audio { width: 100%; display: block; height: 40px; }
-  .speedBtn { height: 26px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--paper); color: var(--ink-2); font: 12px/1 var(--mono); cursor: pointer; flex-shrink: 0; transition: background-color 160ms var(--ease), color 160ms var(--ease), border-color 160ms var(--ease); }
+  .speedBtn { height: 24px; padding: 0 8px; border-radius: 4px; border: 1px solid var(--line); background: var(--paper); color: var(--ink-2); font: 12px/1 var(--mono); cursor: pointer; flex-shrink: 0; transition: background-color 160ms var(--ease), color 160ms var(--ease), border-color 160ms var(--ease); }
   .speedBtn:hover { color: var(--ink); border-color: var(--ink-3); }
-  .speedBtn:active { transform: scale(0.96); }
-  @media (max-width: 480px) { .wordmark { font-size: 40px; } .lede { font-size: 20px; } .item { gap: 12px; } .item .t { font-size: 19px; } }
+  @media (max-width: 480px) { .episodes { padding-left: 0; } .item, .feed-row { gap: 12px; } }
 </style>
 </head>
 <body>
 <main>
   <header class="rise">
     <h1 class="wordmark"><a href="/">kiku</a></h1>
-    <span class="status" id="status"><i></i><span id="statusText">${setup ? "setup" : "studio"}</span></span>
+    <div class="htools">
+      ${nav}
+      ${THEME_BUTTON}
+    </div>
   </header>
   ${body}
-  <footer>everything stays on this machine · kokoro-82m via mlx · ~/Kiku</footer>
 </main>
 
 <div class="player" id="player">
@@ -452,19 +573,102 @@ export function page({
   audio.addEventListener('pause', () => { if (current) push(current, Math.floor(audio.currentTime)); });
   audio.addEventListener('ended', () => { if (current) { store.set('kiku.pos.' + current, String(Math.floor(audio.duration))); push(current, Math.floor(audio.duration)); } if (!SETUP) loadLibrary(); });
 
-  // --- sources: shows, feeds, mailboxes; one add box, one import box, one mailbox form ---
-  function showHtml(s) {
-    const status = s.lastError ? 'error: ' + s.lastError : s.lastPolled ? 'checked ' + day(s.lastPolled) : 'not checked yet';
-    return \`<div class="show" data-id="\${s.id}" data-title="\${esc(s.title)}">
-      <div class="show-head">
-        \${s.artworkUrl ? '<img class="art" src="' + esc(s.artworkUrl) + '" alt="">' : '<span class="art"></span>'}
-        <span class="t">\${esc(s.title)}</span>
-        <span class="m\${s.lastError ? ' error' : ''}" style="font:12px var(--mono);color:var(--ink-3)">\${esc(status)}</span>
-        <button class="icon unsub" type="button" title="Unsubscribe">\${ICON.x}</button>
-      </div>
-      <div class="episodes" hidden></div>
-    </div>\`;
+  // --- sources: one list with a tab per kind, a finder and an order, built to prune a long list ---
+  let sources = { feeds: [], shows: [], mail: [] };
+  // What each source has waiting, counted from the inbox the page already holds (set by the inbox code).
+  let waitingBy = {};
+  const PAGE = 40;
+  let srcShown = PAGE;
+  let srcTab = ['feeds', 'shows', 'mail'].includes(store.get('kiku.srcTab')) ? store.get('kiku.srcTab') : 'feeds';
+  const SORTS = ['name', 'waiting', 'quiet', 'failing'];
+  if (SORTS.includes(store.get('kiku.srcSort'))) $('#srcSort').value = store.get('kiku.srcSort');
+  const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\\./, ''); } catch { return ''; } };
+  const when = (iso) => { const d = new Date(iso); return d.toLocaleDateString(undefined, d.getFullYear() === new Date().getFullYear() ? { month: 'short', day: 'numeric' } : { month: 'short', year: 'numeric' }); };
+  const keyOf = (tab, s) => (tab === 'mail' ? 'mail:' + s.name : s.id);
+  const titleOf = (tab, s) => (tab === 'mail' ? s.user : (s.title || '').trim() || hostOf(s.feedUrl) || s.feedUrl);
+  // A press arms a destructive button and says what it will do; a second press within a few seconds does it.
+  function arm(btn, label, ms) {
+    if (btn.classList.contains('arm')) { clearTimeout(btn._t); return true; }
+    btn.dataset.was = btn.innerHTML; btn.classList.add('arm'); btn.textContent = label;
+    btn._t = setTimeout(() => disarm(btn), ms || 3000);
+    return false;
   }
+  function disarm(btn) {
+    clearTimeout(btn._t);
+    if (!btn.classList.contains('arm')) return;
+    btn.classList.remove('arm'); btn.innerHTML = btn.dataset.was; delete btn.dataset.was;
+  }
+  function srcMeta(tab, s) {
+    const n = waitingBy[keyOf(tab, s)] || 0;
+    const parts = [tab === 'mail' ? esc(s.name) + ' · ' + esc(s.host) + ':' + s.port : esc(hostOf(s.feedUrl))];
+    if (n) parts.push(SETUP ? n + ' waiting' : '<a href="#inboxSec" class="srcName wait" data-key="' + esc(keyOf(tab, s)) + '" data-title="' + esc(titleOf(tab, s)) + '" title="Show these in the inbox">' + n.toLocaleString() + ' waiting</a>');
+    if (s.latest) parts.push('last post ' + when(s.latest));
+    const checked = tab === 'mail' ? s.lastSynced : s.lastPolled;
+    if (s.lastError) parts.push('<span class="fail">failing: ' + esc(s.lastError) + '</span>');
+    else if (!checked) parts.push('not checked yet');
+    else if (tab === 'mail') parts.push('checked ' + when(checked));
+    return parts.join(' · ');
+  }
+  function srcRow(tab, s) {
+    const label = tab === 'mail' ? 'Remove mailbox' : 'Unsubscribe';
+    const art = tab !== 'shows' ? '' : s.artworkUrl ? '<img class="art" src="' + esc(s.artworkUrl) + '" alt="" loading="lazy">' : '<span class="art"></span>';
+    const row = \`<div class="feed-row\${tab === 'shows' ? ' show-head' : ' plain'}" data-id="\${esc(s.id || '')}" data-name="\${esc(s.name || '')}">
+      \${art}
+      <div class="body">
+        <span class="t">\${esc(titleOf(tab, s))}</span>
+        <span class="m">\${srcMeta(tab, s)}</span>
+      </div>
+      <button class="icon unsub" type="button" title="\${label}" aria-label="\${label}">\${ICON.x}</button>
+    </div>\`;
+    return tab === 'shows' ? '<div class="show" data-id="' + esc(s.id) + '">' + row + '<div class="episodes" hidden></div></div>' : row;
+  }
+  function srcVisible() {
+    const q = $('#srcFind').value.trim().toLowerCase();
+    const all = sources[srcTab] || [];
+    const list = q ? all.filter((s) => [titleOf(srcTab, s), s.feedUrl, s.host, s.name].filter(Boolean).join(' ').toLowerCase().includes(q)) : all.slice();
+    const name = (a, b) => titleOf(srcTab, a).localeCompare(titleOf(srcTab, b));
+    const w = (s) => waitingBy[keyOf(srcTab, s)] || 0;
+    const order = {
+      name,
+      waiting: (a, b) => w(b) - w(a) || name(a, b),
+      // Oldest last post first; a source that has not reported one yet goes to the end.
+      quiet: (a, b) => (a.latest ? 0 : 1) - (b.latest ? 0 : 1) || String(a.latest || '').localeCompare(String(b.latest || '')) || name(a, b),
+      failing: (a, b) => (b.lastError ? 1 : 0) - (a.lastError ? 1 : 0) || name(a, b),
+    }[$('#srcSort').value] || name;
+    return list.sort(order);
+  }
+  function renderSources() {
+    const counts = { feeds: sources.feeds.length, shows: sources.shows.length, mail: sources.mail.length };
+    const n = counts.feeds + counts.shows + counts.mail;
+    $('#sourceCount').textContent = n ? [counts.feeds ? counts.feeds + ' feeds' : '', counts.shows ? counts.shows + ' shows' : '', counts.mail ? counts.mail + (counts.mail === 1 ? ' mailbox' : ' mailboxes') : ''].filter(Boolean).join(' · ') : '';
+    $('#srcTools').hidden = n === 0;
+    if (n && !counts[srcTab]) srcTab = ['feeds', 'shows', 'mail'].find((t) => counts[t]);
+    $$('#srcTabs button').forEach((b) => {
+      const t = b.dataset.tab, on = t === srcTab;
+      b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on));
+      b.querySelector('span').textContent = counts[t] ? String(counts[t]) : '';
+      b.hidden = !counts[t];
+    });
+    const list = srcVisible();
+    $('#srcList').innerHTML = list.length ? list.slice(0, srcShown).map((s) => srcRow(srcTab, s)).join('') : n ? '<div class="empty">No source matches.</div>' : '';
+    const left = list.length - srcShown;
+    $('#srcMore').hidden = left <= 0;
+    $('#srcMore').textContent = 'show ' + Math.min(left, PAGE) + ' more · ' + left + ' not shown';
+    if (openShow) { const el = document.querySelector('#srcList .show[data-id="' + CSS.escape(openShow) + '"]'); if (el) toggleEpisodes(el, true); }
+  }
+  async function loadSources() {
+    try { const d = await (await fetch('/api/sources')).json(); if (d && d.feeds) sources = d; } catch {}
+    renderSources();
+    if (SETUP && sources.feeds.length + sources.shows.length + sources.mail.length > 0) $('#setupDone').hidden = false;
+  }
+  $$('#srcTabs button').forEach((b) => b.addEventListener('click', () => { srcTab = b.dataset.tab; store.set('kiku.srcTab', srcTab); srcShown = PAGE; renderSources(); }));
+  $('#srcFind').addEventListener('input', () => { srcShown = PAGE; renderSources(); });
+  $('#srcSort').addEventListener('change', () => { store.set('kiku.srcSort', $('#srcSort').value); srcShown = PAGE; renderSources(); });
+  $('#srcMore').addEventListener('click', () => { srcShown += PAGE; renderSources(); });
+
+  // A show opens to its episodes. The list survives a re-render, so a refresh never closes it under you.
+  const episodesOf = new Map();
+  let openShow = null;
   function episodeHtml(show, ep) {
     return \`<div class="item\${current === ep.id ? ' playing' : ''}" data-id="\${ep.id}" data-file="\${esc(ep.enclosureUrl)}" data-title="\${esc(ep.title)}" data-by="\${esc(show.title)}" data-art="\${esc(show.artworkUrl || '')}">
       <button class="play" type="button" aria-label="Play">\${ICON.play}</button>
@@ -474,35 +678,20 @@ export function page({
       </div>
     </div>\`;
   }
-  function feedRowHtml(f) {
-    const status = f.lastError ? 'error: ' + f.lastError : f.lastPolled ? 'checked ' + day(f.lastPolled) : 'not checked yet';
-    return \`<div class="feed-row" data-id="\${f.id}" data-title="\${esc(f.title)}">
-      <div class="body">
-        <span class="t">\${esc(f.title)}</span>
-        <span class="m\${f.lastError ? ' error' : ''}">\${esc(status)}</span>
-      </div>
-      <button class="icon unsub" type="button" title="Unsubscribe">\${ICON.x}</button>
-    </div>\`;
-  }
-  function mailRowHtml(a) {
-    const status = a.lastError ? 'error: ' + a.lastError : a.lastSynced ? 'checked ' + day(a.lastSynced) : 'not checked yet';
-    return \`<div class="feed-row" data-name="\${esc(a.name)}">
-      <div class="body">
-        <span class="t">\${esc(a.user)}</span>
-        <span class="m\${a.lastError ? ' error' : ''}">\${esc(a.name)} · \${esc(a.host)}:\${a.port} · \${esc(status)}</span>
-      </div>
-      <button class="icon unsub" type="button" title="Remove mailbox">\${ICON.x}</button>
-    </div>\`;
-  }
-  async function loadSources() {
-    let s = { feeds: [], shows: [], mail: [] };
-    try { s = await (await fetch('/api/sources')).json(); } catch {}
-    const n = s.feeds.length + s.shows.length + s.mail.length;
-    $('#sourceCount').textContent = n ? [s.feeds.length ? s.feeds.length + ' feeds' : '', s.shows.length ? s.shows.length + ' shows' : '', s.mail.length ? s.mail.length + (s.mail.length === 1 ? ' mailbox' : ' mailboxes') : ''].filter(Boolean).join(' · ') : '';
-    $('#mailList').innerHTML = s.mail.length ? '<h3>Mailboxes</h3>' + s.mail.map(mailRowHtml).join('') : '';
-    $('#shows').innerHTML = s.shows.length ? '<h3>Shows</h3>' + s.shows.map(showHtml).join('') : '';
-    $('#feedsList').innerHTML = s.feeds.length ? '<h3>Feeds</h3>' + s.feeds.map(feedRowHtml).join('') : '';
-    if (SETUP && n > 0) $('#setupDone').hidden = false;
+  async function toggleEpisodes(show, keepOpen) {
+    const id = show.dataset.id, panel = show.querySelector('.episodes');
+    const opening = keepOpen || panel.hidden;
+    panel.hidden = !opening;
+    openShow = opening ? id : openShow === id ? null : openShow;
+    if (!opening) return;
+    const fill = (d) => { panel.innerHTML = d.episodes.length ? d.episodes.map((ep) => episodeHtml(d.show, ep)).join('') : '<div class="empty">No episodes found.</div>'; };
+    if (episodesOf.has(id)) return fill(episodesOf.get(id));
+    panel.innerHTML = '<div class="empty">Loading…</div>';
+    try {
+      const d = await (await fetch('/api/podcasts/' + id + '/episodes')).json();
+      if (!d.episodes) throw new Error(d.error || 'Could not load episodes.');
+      episodesOf.set(id, d); fill(d);
+    } catch (e) { panel.innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
   }
   const addForm = $('#addForm'), addUrl = $('#addUrl'), addErr = $('#addErr');
   addForm.addEventListener('submit', async (e) => {
@@ -515,6 +704,7 @@ export function page({
       addUrl.value = '';
       addErr.textContent = (r.kind === 'show' ? 'show: ' : 'feed: ') + (r.kind === 'show' ? r.show.title : r.feed.title);
       addErr.classList.add('ok');
+      srcTab = r.kind === 'show' ? 'shows' : 'feeds'; $('#srcFind').value = '';
       loadSources();
     } catch (e) { addErr.textContent = e.message; }
   });
@@ -553,51 +743,27 @@ export function page({
       await postJson('/api/sources', body);
       $('#mailUser').value = ''; $('#mailPass').value = ''; $('#mailHost').value = ''; $('#mailPort').value = '';
       mailErr.textContent = 'added — checking it now'; mailErr.classList.add('ok');
+      srcTab = 'mail';
       loadSources();
       setTimeout(loadSources, 8000);
     } catch (e) { mailErr.textContent = e.message; }
   });
-  $('#mailList').addEventListener('click', async (e) => {
-    const unsub = e.target.closest('.unsub'); if (!unsub) return;
-    const row = e.target.closest('.feed-row');
-    if (!confirm('Remove the mailbox "' + row.dataset.name + '"? Its waiting letters go with it.')) return;
-    await fetch('/api/sources/mail/' + encodeURIComponent(row.dataset.name), { method: 'DELETE' });
-    loadSources(); if (!SETUP) loadInbox();
-  });
-  $('#shows').addEventListener('click', async (e) => {
+  $('#srcList').addEventListener('click', async (e) => {
+    const wait = e.target.closest('.wait');
+    if (wait) { e.preventDefault(); document.dispatchEvent(new CustomEvent('kiku:scope', { detail: { key: wait.dataset.key, title: wait.dataset.title } })); return; }
+    const ep = e.target.closest('.episodes .item');
+    if (ep) { play(ep.dataset); return; }
+    const row = e.target.closest('.feed-row'); if (!row) return;
     const unsub = e.target.closest('.unsub');
-    if (unsub) {
-      const show = e.target.closest('.show');
-      if (!confirm('Unsubscribe from "' + show.dataset.title + '"?')) return;
-      await fetch('/api/podcasts/' + show.dataset.id, { method: 'DELETE' });
-      loadSources(); if (!SETUP) loadInbox();
-      return;
-    }
-    const epRow = e.target.closest('.item');
-    if (epRow) { play(epRow.dataset); return; }
-    const head = e.target.closest('.show-head');
-    if (head) {
-      const show = head.closest('.show');
-      const panel = show.querySelector('.episodes');
-      const opening = panel.hidden;
-      panel.hidden = !opening;
-      if (opening && !panel.dataset.loaded) {
-        panel.innerHTML = '<div class="empty">Loading…</div>';
-        try {
-          const d = await (await fetch('/api/podcasts/' + show.dataset.id + '/episodes')).json();
-          if (!d.episodes) throw new Error(d.error || 'Could not load episodes.');
-          panel.dataset.loaded = '1';
-          panel.innerHTML = d.episodes.length ? d.episodes.map((ep) => episodeHtml(d.show, ep)).join('') : '<div class="empty">No episodes found.</div>';
-        } catch (e) { panel.innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
-      }
-    }
-  });
-  $('#feedsList').addEventListener('click', async (e) => {
-    const unsub = e.target.closest('.unsub'); if (!unsub) return;
-    const row = e.target.closest('.feed-row');
-    if (!confirm('Unsubscribe from "' + row.dataset.title + '"?')) return;
-    await fetch('/api/feeds/' + row.dataset.id, { method: 'DELETE' });
-    loadSources(); if (!SETUP) loadInbox();
+    if (!unsub) { if (srcTab === 'shows') toggleEpisodes(row.closest('.show')); return; }
+    if (!arm(unsub, srcTab === 'mail' ? 'remove' : 'unsubscribe')) return;
+    const url = srcTab === 'mail' ? '/api/sources/mail/' + encodeURIComponent(row.dataset.name) : (srcTab === 'shows' ? '/api/podcasts/' : '/api/feeds/') + row.dataset.id;
+    const gone = row.closest('.show') || row;
+    gone.classList.add('leaving');
+    const res = await fetch(url, { method: 'DELETE' }).catch(() => null);
+    if (!res || !res.ok) { gone.classList.remove('leaving'); disarm(unsub); unsub.title = 'Could not remove it. Try again.'; return; }
+    await loadSources();
+    if (!SETUP) loadInbox();
   });
 
   // --- readiness (one line, only when something this machine needs is missing) ---
@@ -688,8 +854,6 @@ export function page({
       await fetch('/api/jobs/' + b.closest('.job').dataset.id, { method: 'DELETE' });
       poll(true);
     }));
-    $('#status i').className = active.length ? 'busy' : '';
-    $('#statusText').textContent = active.length ? 'making' : 'studio';
     const doneNow = jobs.some((j) => j.status === 'done' && Date.now() - new Date(j.updatedAt) < 4000);
     if (doneNow || fast) loadLibrary();
     pollTimer = setTimeout(() => poll(false), active.length ? 1500 : 8000);
@@ -706,31 +870,32 @@ export function page({
     $('#library').innerHTML = items.map((it) => {
       const pos = Math.max(Number(store.get('kiku.pos.' + it.id) || 0), Number(serverPos[it.id]?.seconds || 0));
       const done = pos > 0 && it.seconds - pos < 20;
-      const by = [it.author, it.site].filter(Boolean).join(' · ');
+      const by = Array.from(new Set([it.author, it.site].filter(Boolean))).join(' · ');
+      const proton = it.exportedAt ? ' · <span title="A copy is in Proton Drive">proton</span>' : '';
       if (it.kind === 'artifact') {
         const href = '/artifacts/' + encodeURIComponent(it.file);
-        return \`<div class="item art" data-id="\${it.id}" data-href="\${href}" data-title="\${esc(it.title)}">
+        return \`<div class="item art" data-id="\${it.id}" data-title="\${esc(it.title)}">
         <a class="play" href="\${href}" target="_blank" rel="noopener" aria-label="Open">\${ICON.see}</a>
         <div class="body">
-          <span class="t">\${esc(it.title)}</span>
-          <span class="m">\${by ? esc(by) + ' · ' : ''}\${it.sets || 3} sets · drawn here by \${esc(it.model || 'a local model')} · \${day(it.createdAt)}\${it.exportedAt ? ' · <span class="pd" title="A copy is in Proton Drive">proton</span>' : ''}</span>
+          <a class="t" href="\${href}" target="_blank" rel="noopener">\${esc(it.title)}</a>
+          <span class="m">\${by ? esc(by) + ' · ' : ''}\${it.sets || 3} sets · drawn here by \${esc(it.model || 'a local model')} · \${day(it.createdAt)}\${proton}</span>
         </div>
-        <div class="more">
-          <a class="icon" href="\${href}" download title="Download html">\${ICON.down}</a>
-          <button class="icon del" type="button" title="Remove">\${ICON.x}</button>
+        <div class="acts">
+          <a class="act" href="\${href}" download title="Download html">html</a>
+          <button class="act del" type="button" title="Remove" aria-label="Remove">×</button>
         </div>
       </div>\`;
       }
       if (it.kind === 'text') {
         const href = '/read/' + encodeURIComponent(it.id);
-        return \`<div class="item art" data-id="\${it.id}" data-href="\${href}" data-title="\${esc(it.title)}">
+        return \`<div class="item art" data-id="\${it.id}" data-title="\${esc(it.title)}">
         <a class="play" href="\${href}" aria-label="Read">\${ICON.read}</a>
         <div class="body">
-          <span class="t">\${esc(it.title)}</span>
+          <a class="t" href="\${href}">\${esc(it.title)}</a>
           <span class="m">\${by ? esc(by) + ' · ' : ''}\${(it.words || 0).toLocaleString()} words · \${Math.max(1, Math.round((it.words || 0) / 230))} min · \${day(it.createdAt)}</span>
         </div>
-        <div class="more">
-          <button class="icon del" type="button" title="Remove">\${ICON.x}</button>
+        <div class="acts">
+          <button class="act del" type="button" title="Remove" aria-label="Remove">×</button>
         </div>
       </div>\`;
       }
@@ -738,72 +903,160 @@ export function page({
         <button class="play" type="button" aria-label="Play">\${ICON.play}</button>
         <div class="body">
           <span class="t">\${esc(it.title)}</span>
-          <span class="m">\${by ? esc(by) + ' · ' : ''}\${fmt(it.seconds)} · \${day(it.createdAt)}\${done ? ' · <span class="done">finished</span>' : pos > 30 ? ' · at ' + fmt(pos) : ''}\${it.exportedAt ? ' · <span class="pd" title="A copy is in Proton Drive">proton</span>' : ''}</span>
+          <span class="m">\${by ? esc(by) + ' · ' : ''}\${fmt(it.seconds)} · \${day(it.createdAt)}\${done ? ' · <span class="done">finished</span>' : pos > 30 ? ' · at ' + fmt(pos) : ''}\${proton}</span>
         </div>
-        <div class="more">
-          <a class="icon" href="/read/\${encodeURIComponent(it.id)}" title="Read the text">\${ICON.read}</a>
-          <a class="icon" href="/audio/\${encodeURIComponent(it.file)}" download title="Download mp3">\${ICON.down}</a>
-          <button class="icon del" type="button" title="Remove">\${ICON.x}</button>
+        <div class="acts">
+          <a class="act" href="/read/\${encodeURIComponent(it.id)}" title="Read the text">text</a>
+          <a class="act" href="/audio/\${encodeURIComponent(it.file)}" download title="Download mp3">mp3</a>
+          <button class="act del" type="button" title="Remove" aria-label="Remove">×</button>
         </div>
       </div>\`;
     }).join('');
   }
   $('#library').addEventListener('click', async (e) => {
     const row = e.target.closest('.item'); if (!row) return;
-    if (e.target.closest('a.icon')) return;
+    if (e.target.closest('a')) return;
     if (e.target.closest('.del')) {
       if (!confirm('Remove "' + row.dataset.title + '"?')) return;
       await fetch('/api/library/' + row.dataset.id, { method: 'DELETE' });
       if (current === row.dataset.id) { audio.pause(); player.classList.remove('on'); current = null; }
       loadLibrary(); return;
     }
-    if (row.classList.contains('art')) {
-      if (e.target.closest('.body')) window.open(row.dataset.href, row.dataset.href.startsWith('/read/') ? '_self' : '_blank', 'noopener');
-      return;
-    }
+    if (row.classList.contains('art')) return;
     if (e.target.closest('.play') || e.target.closest('.body')) play(row.dataset);
   });
 
   // --- inbox: what the sources published since you subscribed, waiting for one of four verbs ---
+  // The page narrows it by kind, by source and by words, and draws fifty at a time. Narrowing
+  // chooses nothing: every item still waits for a verb, and dismissing many is a verb pressed twice.
   const SRC = { feed: 'feed', show: 'episode', mail: 'letter' };
+  const NOUN = { all: ['item', 'items'], feed: ['post', 'posts'], show: ['episode', 'episodes'], mail: ['letter', 'letters'] };
+  const INBOX_CAP = ${inboxCap};
+  const IPAGE = 50;
+  let inboxItems = [];
+  let inboxShown = IPAGE;
+  const view = { kind: 'all', key: '', title: '', q: '' };
   function inboxHtml(it) {
     const isShow = it.source === 'show';
+    const title = it.link
+      ? '<a class="t" href="' + esc(it.link) + '" target="_blank" rel="noopener noreferrer">' + esc(it.title) + '</a>'
+      : '<span class="t" title="Listen">' + esc(it.title) + '</span>';
     return \`<div class="item\${current === it.id ? ' playing' : ''}" data-id="\${it.id}" data-source="\${it.source}">
       <button class="play listen" type="button" aria-label="Listen" title="\${isShow ? 'Play' : 'Read it to me'}">\${ICON.play}</button>
-      <div class="body" title="Listen">
-        <span class="t">\${esc(it.title)}</span>
-        <span class="m"><span class="src">\${SRC[it.source] || it.source}</span> · \${esc(it.feedTitle)} · \${day(it.pubDate)}\${it.seconds ? ' · ' + fmt(it.seconds) : ''}</span>
+      <div class="body">
+        \${title}
+        <span class="m"><span class="src">\${SRC[it.source] || it.source}</span> · <a href="#inboxSec" class="srcName" data-key="\${esc(it.feedId)}" data-title="\${esc(it.feedTitle)}" title="Only this source">\${esc(it.feedTitle)}</a> · \${day(it.pubDate)}\${it.seconds ? ' · ' + fmt(it.seconds) : ''}</span>
       </div>
-      <div class="more">
-        <button class="icon see" type="button" title="Draw it as sets"\${isShow ? ' hidden' : ''}>\${ICON.see}</button>
-        <button class="icon read" type="button" title="\${isShow ? 'Read the show notes' : 'Clean it to read'}">\${ICON.read}</button>
-        <button class="icon dismiss" type="button" title="Dismiss">\${ICON.x}</button>
+      <div class="acts">
+        <button class="act see" type="button" title="Draw it as sets"\${isShow ? ' hidden' : ''}>see</button>
+        <button class="act read" type="button" title="\${isShow ? 'Read the show notes' : 'Clean it to read'}">read</button>
+        <button class="act dismiss" type="button" title="Dismiss" aria-label="Dismiss">×</button>
       </div>
     </div>\`;
   }
-  async function loadInbox() {
-    let items = [];
-    try { items = await (await fetch('/api/inbox')).json(); } catch {}
-    $('#inboxCount').textContent = items.length ? String(items.length) : '';
-    $('#inbox').innerHTML = items.length ? items.map(inboxHtml).join('') : '<div class="empty">Nothing new. What your sources publish from now on lands here.</div>';
+  const matches = (it) => (view.kind === 'all' || it.source === view.kind) && (!view.key || it.feedId === view.key) && (!view.q || (it.title + ' ' + it.feedTitle).toLowerCase().includes(view.q));
+  function recount() {
+    const w = {};
+    for (const it of inboxItems) w[it.feedId] = (w[it.feedId] || 0) + 1;
+    const changed = JSON.stringify(w) !== JSON.stringify(waitingBy);
+    waitingBy = w;
+    if (changed) renderSources();
   }
+  function renderInbox() {
+    const counts = { all: inboxItems.length, feed: 0, show: 0, mail: 0 };
+    for (const it of inboxItems) counts[it.source] = (counts[it.source] || 0) + 1;
+    const n = inboxItems.length;
+    $('#inboxCount').textContent = n ? n.toLocaleString() + (n >= INBOX_CAP ? ' · full, the oldest fall off' : '') : '';
+    // Fewer than a screenful needs no filters; they appear as the inbox grows, and stay while one is in use.
+    $('#inboxTools').hidden = n < 8 && view.kind === 'all' && !view.q && !view.key;
+    $$('#inboxKinds button').forEach((b) => {
+      const k = b.dataset.kind, on = k === view.kind;
+      b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on));
+      b.querySelector('span').textContent = counts[k] ? counts[k].toLocaleString() : '';
+      b.hidden = k !== 'all' && !counts[k] && !on;
+    });
+    const list = inboxItems.filter(matches);
+    const narrowed = view.kind !== 'all' || view.key || view.q;
+    $('#inboxScope').hidden = !narrowed;
+    const bulk = $('#bulk');
+    disarm(bulk);
+    if (narrowed) {
+      $('#scopeText').textContent = list.length.toLocaleString() + ' ' + NOUN[view.kind][list.length === 1 ? 0 : 1] + (view.key ? ' from ' + view.title : '') + (view.q ? ' matching “' + view.q + '”' : '');
+      bulk.hidden = list.length === 0;
+      bulk.textContent = list.length === 1 ? 'dismiss it' : 'dismiss these ' + list.length.toLocaleString();
+    }
+    $('#inbox').innerHTML = list.length ? list.slice(0, inboxShown).map(inboxHtml).join('') : '<div class="empty">' + (n ? 'Nothing here matches.' : 'Nothing new. What your sources publish from now on lands here.') + '</div>';
+    const left = list.length - inboxShown;
+    $('#inboxMore').hidden = left <= 0;
+    $('#inboxMore').textContent = 'show ' + Math.min(left, IPAGE) + ' more · ' + left.toLocaleString() + ' not shown';
+  }
+  async function loadInbox() {
+    let items = null;
+    try { items = await (await fetch('/api/inbox')).json(); } catch {}
+    if (!Array.isArray(items)) return;
+    inboxItems = items;
+    recount();
+    renderInbox();
+  }
+  function scope(key, title) {
+    Object.assign(view, { kind: 'all', key, title, q: '' });
+    $('#inboxFind').value = ''; inboxShown = IPAGE; $('#inboxErr').textContent = '';
+    renderInbox();
+  }
+  document.addEventListener('kiku:scope', (e) => {
+    scope(e.detail.key, e.detail.title);
+    $('#inboxSec').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+  });
+  $$('#inboxKinds button').forEach((b) => b.addEventListener('click', () => { view.kind = b.dataset.kind; inboxShown = IPAGE; renderInbox(); }));
+  let findTimer = null;
+  $('#inboxFind').addEventListener('input', () => { clearTimeout(findTimer); findTimer = setTimeout(() => { view.q = $('#inboxFind').value.trim().toLowerCase(); inboxShown = IPAGE; renderInbox(); }, 120); });
+  $('#scopeClear').addEventListener('click', () => scope('', ''));
+  $('#inboxMore').addEventListener('click', () => { inboxShown += IPAGE; renderInbox(); });
+  $('#bulk').addEventListener('click', async () => {
+    const b = $('#bulk');
+    const ids = inboxItems.filter(matches).map((it) => it.id);
+    if (!ids.length) return;
+    if (!arm(b, 'press again to dismiss ' + ids.length.toLocaleString(), 4000)) return;
+    b.disabled = true;
+    const inboxErr = $('#inboxErr');
+    try {
+      const r = await postJson('/api/inbox/dismiss', { ids });
+      const gone = new Set(ids);
+      inboxItems = inboxItems.filter((it) => !gone.has(it.id));
+      scope('', '');
+      inboxErr.textContent = r.dismissed.toLocaleString() + ' dismissed';
+      inboxErr.classList.add('ok');
+      setTimeout(() => { inboxErr.textContent = ''; inboxErr.classList.remove('ok'); }, 4000);
+    } catch (e) { inboxErr.classList.remove('ok'); inboxErr.textContent = e.message; }
+    finally { b.disabled = false; recount(); renderInbox(); }
+  });
   $('#inbox').addEventListener('click', async (e) => {
     const row = e.target.closest('.item'); if (!row) return;
+    const name = e.target.closest('.srcName');
+    if (name) { e.preventDefault(); scope(name.dataset.key, name.dataset.title); return; }
     const id = row.dataset.id;
-    const verb = e.target.closest('.dismiss') ? 'dismiss' : e.target.closest('.see') ? 'see' : e.target.closest('.read') ? 'read' : (e.target.closest('.listen') || e.target.closest('.body')) ? 'listen' : null;
+    if (e.target.closest('a.t')) return; // the article itself, in its own tab
+    const verb = e.target.closest('.dismiss') ? 'dismiss' : e.target.closest('.see') ? 'see' : e.target.closest('.read') ? 'read' : (e.target.closest('.listen') || e.target.closest('span.t')) ? 'listen' : null;
     if (!verb) return;
+    const inboxErr = $('#inboxErr');
+    inboxErr.textContent = ''; inboxErr.classList.remove('ok');
+    row.classList.add('leaving');
     try {
-      const r = await postJson('/api/inbox/' + id + '/' + verb, verb === 'see' ? { sets: Number(store.get('kiku.sets') || 3) } : {});
+      const [r] = await Promise.all([
+        postJson('/api/inbox/' + id + '/' + verb, verb === 'see' ? { sets: Number(store.get('kiku.sets') || 3) } : {}),
+        new Promise((done) => setTimeout(done, 180)),
+      ]);
       if (r.play) play({ id: r.play.id, file: r.play.file, title: r.play.title, by: r.play.by, art: r.play.art });
-    } catch (e) { err.textContent = e.message; }
-    loadInbox();
+      inboxItems = inboxItems.filter((it) => it.id !== id);
+      recount(); renderInbox();
+    } catch (e) { row.classList.remove('leaving'); inboxErr.textContent = e.message; loadInbox(); }
     if (verb !== 'dismiss') poll(true);
   });
 
   // --- ?u= prefill (used by the Shortcut fallback) ---
   const params = new URLSearchParams(location.search);
   const pre = params.get('u') || params.get('url') || params.get('text');
-  if (pre) { input.value = pre; history.replaceState(null, '', location.pathname); form.requestSubmit(); }
+  if (pre) { form.hidden = false; input.value = pre; history.replaceState(null, '', location.pathname); form.requestSubmit(); }
 
   loadLibrary();
   loadInbox();
@@ -811,6 +1064,7 @@ export function page({
   setInterval(loadInbox, 60000);
 })();
 </script>
+${THEME_JS}
 </body>
 </html>`;
 }
@@ -832,8 +1086,10 @@ export function readPage(r: ReadProps): string {
 <html lang="en">
 <head>
 <meta charset="utf-8">
+${THEME_HEAD}
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
+${THEME_METAS}
 <meta name="referrer" content="no-referrer">
 <link rel="icon" href="/cover.png">
 <title>${esc(r.title)} · Kiku</title>
@@ -841,28 +1097,25 @@ export function readPage(r: ReadProps): string {
   ${BASE_CSS}
   body { padding: 0 20px 80px; }
   main { max-width: 640px; }
-  .top { display: flex; justify-content: space-between; align-items: baseline; padding: 32px 0 40px; font: 12px/1 var(--mono); color: var(--ink-3); }
+  .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 32px 0 48px; font-size: 12px; color: var(--ink-3); }
   .top a { text-decoration: none; color: var(--ink-2); }
   .top a:hover { color: var(--ink); }
-  h1 { font-family: var(--display); font-weight: 400; font-size: 40px; line-height: 1.1; letter-spacing: -0.015em; margin: 0 0 12px; }
-  .by { font: 13px/1.6 var(--mono); color: var(--ink-2); margin: 0 0 40px; }
+  h1 { font: 500 20px/1.5 var(--mono); margin: 0 0 8px; }
+  .by { font-size: 12px; line-height: 1.7; color: var(--ink-3); margin: 0 0 40px; overflow-wrap: anywhere; }
   .by a { color: inherit; }
-  article p { font-family: var(--display); font-size: 21px; line-height: 1.5; margin: 0 0 1.1em; }
-  article p:first-of-type::first-letter { font-size: 1.6em; line-height: 1; padding-right: 2px; }
-  .end { margin-top: 56px; font: 12px/1.6 var(--mono); color: var(--ink-3); }
-  @media (max-width: 480px) { h1 { font-size: 32px; } article p { font-size: 19px; } }
+  article p { font-size: 15px; line-height: 1.8; margin: 0 0 1.4em; }
 </style>
 </head>
 <body>
 <main>
-  <div class="top"><a href="/">← kiku</a><span>${r.words.toLocaleString()} words · ${minutes} min</span></div>
+  <div class="top"><a href="/">← kiku</a><span class="htools"><span>${r.words.toLocaleString()} words · ${minutes} min</span>${THEME_BUTTON}</span></div>
   <h1>${esc(r.title)}</h1>
   <p class="by">${by ? esc(by) : ""}${r.sourceUrl ? `${by ? " · " : ""}<a href="${esc(r.sourceUrl)}" rel="noopener noreferrer">${esc(r.sourceUrl)}</a>` : ""}</p>
   <article>
 ${r.paragraphs.map((p) => `    <p>${esc(p)}</p>`).join("\n")}
   </article>
-  <div class="end">read on this machine · nothing was fetched to show this page</div>
 </main>
+${THEME_JS}
 </body>
 </html>`;
 }

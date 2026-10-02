@@ -7,7 +7,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { decodeEntities } from "./clean.ts";
 import { cleanUrl } from "./hygiene.ts";
-import { tag, attrFrom, stripTags, hashId } from "./podcasts.ts";
+import { tag, attrFrom, stripTags, hashId, latestOf } from "./podcasts.ts";
 
 export type TextFeed = {
   id: string;
@@ -17,6 +17,8 @@ export type TextFeed = {
   addedAt: string; // ISO
   lastPolled?: string; // ISO
   lastError?: string;
+  /** The newest post the feed carried when it was last read. How a quiet or dead feed shows itself. */
+  latest?: string; // ISO
   seen: string[]; // recent guids, capped — keeps rediscovered items from re-entering the inbox
 };
 
@@ -52,7 +54,7 @@ export function sourceOf(item: InboxItem): Source {
 
 const SEEN_CAP = 600;
 /** The only automatic forgetting: nothing else leaves the inbox except by a verb. */
-const INBOX_CAP = 2000;
+export const INBOX_CAP = 2000;
 
 type Store = { feeds: TextFeed[]; inbox: InboxItem[] };
 
@@ -133,6 +135,18 @@ export class TextFeeds {
     });
   }
 
+  /** Dismiss many in one write. The person chose them; this only saves a write per item. */
+  async removeManyFromInbox(ids: string[]): Promise<number> {
+    const drop = new Set(ids);
+    let removed = 0;
+    await this.mutate((s) => {
+      const before = s.inbox.length;
+      s.inbox = s.inbox.filter((i) => !drop.has(i.id));
+      removed = before - s.inbox.length;
+    });
+    return removed;
+  }
+
   async removeFromInbox(id: string): Promise<InboxItem | undefined> {
     const item = this.store.inbox.find((i) => i.id === id);
     if (!item) return undefined;
@@ -160,6 +174,8 @@ export class TextFeeds {
       if (!feed) return;
       feed.lastPolled = new Date().toISOString();
       feed.lastError = error;
+      const newest = latestOf(articles);
+      if (newest) feed.latest = newest;
       const seen = new Set(feed.seen);
       for (const a of articles) {
         if (seen.has(a.guid)) continue;

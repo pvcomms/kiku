@@ -157,3 +157,14 @@ Substack attaches a voiceover to every post, so "has audio" describes a text pub
 well as a podcast. A show's items are mostly audio and their text is show notes; a post's
 body is the post. Median item body under 400 words with audio on most items is a show. The
 page lets the person overrule the guess, because the guess will sometimes be wrong.
+
+---
+
+**2026-10-02 — Dismissing many is still a verb; the page only narrows.**
+With 2,000 items waiting, one at a time is not friction, it is a wall, and a wall gets the
+whole Inbox ignored. So a narrowed view — one source, one kind, some words — can be dismissed
+together. The person draws the line and presses twice; the button says how many it will take.
+Nothing is dismissed for them: there is no rule, no age-out beyond the cap that was already
+there, and no suggestion of what to drop. The orders on the Sources list (most waiting,
+longest quiet, failing first) sort by a fact the person chose to sort by; the default is a to z.
+

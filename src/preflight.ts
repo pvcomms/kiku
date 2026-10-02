@@ -21,6 +21,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 /** The repo id bin/tts.py loads. Its cache directory name is derived from it. */
 export const KOKORO_REPO = "mlx-community/Kokoro-82M-bf16";
+/** The model that transcribes a spoken note. Optional: without it the page offers marks, not `speak`. */
+export const STT_REPO =
+  process.env.KIKU_STT_MODEL ?? "mlx-community/parakeet-tdt-0.6b-v3";
 
 /** A long book makes a few hundred MB of intermediate wav. Refuse to start below this. */
 export const FREE_FLOOR_BYTES = 2_000_000_000;
@@ -101,6 +104,15 @@ export async function check(opts: CheckOptions = {}): Promise<Report> {
   });
 
   checks.push(await ollamaCheck());
+
+  const ears = snapshotOf(STT_REPO);
+  checks.push({
+    name: "voice notes",
+    ok: ears !== null,
+    level: "want",
+    detail: ears ?? `${STT_REPO} is not in the Hugging Face cache — notes can be marked, not spoken`,
+    fix: `${venvPython(root)} -c "from mlx_audio.stt.utils import load_model; load_model('${STT_REPO}')"  # once, online`,
+  });
 
   const exportDir = resolveExportDir();
   checks.push({
@@ -211,9 +223,14 @@ export function hfCacheRoot(): string {
  * because it makes the offline switch below claim the machine is ready when it is not.
  */
 export function kokoroSnapshot(): string | null {
+  return snapshotOf(KOKORO_REPO);
+}
+
+/** The cached snapshot of any Hugging Face repo, held to the same rule: config and weights both. */
+export function snapshotOf(repo: string): string | null {
   const dir = path.join(
     hfCacheRoot(),
-    "models--" + KOKORO_REPO.replace("/", "--"),
+    "models--" + repo.replace("/", "--"),
     "snapshots",
   );
   let entries: string[];
@@ -230,7 +247,9 @@ export function kokoroSnapshot(): string | null {
     } catch {
       continue;
     }
-    const hasWeights = files.some((f) => f.endsWith(".safetensors"));
+    const hasWeights = files.some(
+      (f) => f.endsWith(".safetensors") || f.endsWith(".npz"),
+    );
     if (hasWeights && files.includes("config.json")) return snapshot;
   }
   return null;

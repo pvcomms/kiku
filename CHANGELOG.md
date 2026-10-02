@@ -7,6 +7,17 @@ the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Notes (spec 014). The player has **mark**, which keeps the second and the paragraph playing
+  then, and **speak**, which pauses, records what the person says until they press stop, resumes,
+  and transcribes it on this machine with Parakeet through the mlx-audio already in the speech
+  environment. `m` on a keyboard and the media session's _next track_ (headphones, lock screen)
+  also mark. A show's episode has no text, so its mark transcribes the thirty seconds before it
+  from the enclosure. `/notes` lists them by reading; a timestamp plays from that second, words
+  can be typed or corrected, and a note is removed in two presses. Each reading's notes are
+  written to `~/Kiku/notes/<id>.md` and copied to Proton Drive's `Kiku/Notes/`. Readings now keep
+  their paragraph start times in `text/<id>.times.json`; older ones are estimated by length and
+  say so. The Mac app grants the microphone to its own page.
+
 - Curation (spec 012). The Inbox narrows by kind, by words and by source, draws fifty at a
   time, and dismisses a narrowed view in two presses. Sources are one list with a tab per kind,
   a finder and four orders (a to z, most waiting, longest quiet, failing first); each row shows

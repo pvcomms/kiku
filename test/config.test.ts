@@ -25,13 +25,25 @@ test("the speech environment is .venv in the repo unless KIKU_VENV moves it", ()
 });
 
 test("the page says whether there is anything to draw with", () => {
-  const props = { voices: [], defaultVoice: "af_heart", hosts: [], setup: false, inboxCap: 2000, view: "focus" as const };
-  assert.match(page({ ...props, see: true }), /<html lang="en" data-see="on">/);
-  assert.match(page({ ...props, see: false }), /<html lang="en" data-see="off">/);
+  const props = { voices: [], defaultVoice: "af_heart", hosts: [], setup: false, inboxCap: 2000, view: "focus" as const, speak: false };
+  assert.match(page({ ...props, see: true }), /<html lang="en" data-see="on" data-speak="off">/);
+  assert.match(page({ ...props, see: false }), /<html lang="en" data-see="off" data-speak="off">/);
+});
+
+test("the page offers speak only with a voice model, and /notes shows the notes alone", () => {
+  const props = { voices: [], defaultVoice: "af_heart", hosts: [], setup: false, see: true, inboxCap: 2000 };
+  assert.match(page({ ...props, view: "focus", speak: true }), /data-speak="on"/);
+  assert.doesNotMatch(page({ ...props, view: "focus", speak: false }), /<b>speak<\/b>/);
+  const notes = page({ ...props, view: "notes", speak: true });
+  assert.match(notes, /<section class="rise" id="notesSec">/);
+  assert.match(notes, /<section class="rise" id="inboxSec" hidden>/);
+  assert.match(notes, /<section class="rise" id="sources" hidden>/);
+  assert.match(notes, /<a href="\/notes" class="on">notes<\/a>/);
+  assert.match(page({ ...props, view: "focus", speak: true }), /<section class="rise" id="notesSec" hidden>/);
 });
 
 test("both pages carry the theme button, and the saved theme is applied before any style", () => {
-  const props = { voices: [], defaultVoice: "af_heart", hosts: [], setup: false, see: true, inboxCap: 2000, view: "focus" as const };
+  const props = { voices: [], defaultVoice: "af_heart", hosts: [], setup: false, see: true, inboxCap: 2000, view: "focus" as const, speak: true };
   const pages = [page(props), readPage({ title: "T", paragraphs: ["p"], words: 1 })];
   for (const html of pages) {
     assert.match(html, /<button class="theme" id="theme"/);
@@ -43,7 +55,7 @@ test("both pages carry the theme button, and the saved theme is applied before a
 });
 
 test("the focus page shows the players and the articles; /sources shows the rest", () => {
-  const props = { voices: [], defaultVoice: "af_heart", hosts: [], setup: false, see: true, inboxCap: 2000 };
+  const props = { voices: [], defaultVoice: "af_heart", hosts: [], setup: false, see: true, inboxCap: 2000, speak: true };
   const focus = page({ ...props, view: "focus" });
   const manage = page({ ...props, view: "manage" });
   assert.match(focus, /<section class="rise" id="inboxSec">/);

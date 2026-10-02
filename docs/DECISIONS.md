@@ -168,3 +168,22 @@ Nothing is dismissed for them: there is no rule, no age-out beyond the cap that 
 there, and no suggestion of what to drop. The orders on the Sources list (most waiting,
 longest quiet, failing first) sort by a fact the person chose to sort by; the default is a to z.
 
+---
+
+**2026-10-02 — Spoken notes are transcribed here, by a model already on the machine.**
+The browser's own speech recognition is the easy route and sends the voice to Google from
+Chrome and Brave. That is not available. Parakeet TDT 0.6b v3 runs through `mlx-audio`, which
+the speech environment already carries for Kokoro, so a spoken note costs no new dependency,
+no API key and no network once the weights are cached; on the Studio a note comes back in about
+four seconds, model load included. The cost is that recording needs a secure origin, so `speak`
+works on `localhost` and the tailnet address and not on `http://<mac>.local`, and that a locked
+phone can mark but not record. Both are said on the page rather than worked around.
+
+---
+
+**2026-10-02 — The "next track" slot marks a moment.**
+kiku has no next track and never will, so the headphone double-tap and the lock screen's next
+button had nothing to do. They now mark the moment, which is the one thing a person with their
+hands busy wants to do mid-listen. If a platform shows track buttons in place of the skip
+buttons because of it, that trade is the one to revisit, not the refusal of a queue.
+
